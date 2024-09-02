@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Network security configuration file, created to allow testing of oobabooga/text-generation-webui
+   framework using HTTP. Recommendation is to delete and re-configure the networking to use
+   HTTPS instead.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.254.7</domain>
+        <domain includeSubdomains="true">173.184.52.40</domain>
+    </domain-config>
+</network-security-config>
