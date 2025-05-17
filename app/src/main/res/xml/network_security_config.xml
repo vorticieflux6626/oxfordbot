@@ -5,7 +5,9 @@
 -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.254.131</domain>
+        <domain includeSubdomains="true">151.213.208.190</domain>
         <domain includeSubdomains="true">192.168.254.7</domain>
-        <domain includeSubdomains="true">173.184.52.40</domain>
+        <domain includeSubdomains="true">24.26.41.112</domain>
     </domain-config>
 </network-security-config>
