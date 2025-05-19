@@ -325,7 +325,7 @@ class MainActivity : ComponentActivity() {
                 scaffoldState = scaffoldState,
                 topBar = {
                     TopAppBar(
-                        title = { Text(text = "Oxford Bot") },
+                        title = { Text(text = "Techno Bot") },
                         navigationIcon = {
                             IconButton(onClick = {
                                 scope.launch {
@@ -803,7 +803,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Add this citation processor method to your MainActivity class
     private fun processResponseWithCitations(responseText: String): String {
         // First, check if the response contains citations in [X] format
         if (!responseText.contains("[") || !responseText.contains("]")) {
@@ -824,16 +823,16 @@ class MainActivity : ComponentActivity() {
         // Build citation references section
         val citationsBuilder = StringBuilder("\n\n---\n**References:**\n")
 
-        // Access the ragFiles from chatState (which is a class property in MainActivity)
-        val ragFiles = this.chatState.value.ragFiles
+        // Get only the selected RAG files - THIS IS THE KEY CHANGE
+        val selectedRagFiles = this.chatState.value.ragFiles.filter { it.isSelected }
 
         citations.sorted().forEach { citationNumber ->
-            // Convert citation number to zero-based index (if needed)
+            // Convert citation number to zero-based index
             val index = citationNumber - 1
 
-            // Make sure index is valid
-            if (index >= 0 && index < ragFiles.size) {
-                val ragFile = ragFiles[index]
+            // Make sure index is valid within selected files
+            if (index >= 0 && index < selectedRagFiles.size) {
+                val ragFile = selectedRagFiles[index] // Use selectedRagFiles instead of all ragFiles
                 citationsBuilder.append("[${citationNumber}] ${ragFile.displayName}\n")
             } else {
                 citationsBuilder.append("[${citationNumber}] Unknown reference\n")
@@ -881,7 +880,17 @@ data class ChatState(
         RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians"),
         RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations"),
         RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process"),
-        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting")
+        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting"),
+        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual"),
+        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual"),
+        RagFile( "c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual"),
+        RagFile( "2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual"),
+        RagFile( "37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual"),
+        RagFile( "d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual"),
+        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual"),
+        RagFile( "df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual"),
+        RagFile( "7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual"),
+        RagFile( "af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual")
     )
 ) : Serializable
 
@@ -904,5 +913,5 @@ data class PingResult(
 data class RagFile(
     val id: String,
     val displayName: String,
-    var isSelected: Boolean = true
+    var isSelected: Boolean = false
 )
