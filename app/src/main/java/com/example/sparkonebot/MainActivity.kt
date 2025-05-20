@@ -2,7 +2,9 @@ package com.example.oxfordbot
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.Context
 import android.content.res.Configuration
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
 import android.speech.RecognizerIntent
@@ -39,6 +41,10 @@ import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ButtonDefaults
 import com.example.oxfordbot.ui.theme.*
+import com.example.oxfordbot.LogManager
+import com.example.oxfordbot.LogLevel
+import com.example.oxfordbot.LogEntry
+import com.example.oxfordbot.LogScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.io.IOException
@@ -54,6 +60,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonElement
 import com.google.gson.stream.JsonReader
+import com.google.gson.reflect.TypeToken
 
 // Global Variables
 val MyAppIcons = Icons.Rounded
@@ -70,13 +77,24 @@ class MainActivity : ComponentActivity() {
     private val chatState = mutableStateOf(ChatState())
     private var textToSpeech: TextToSpeech? = null
     private val isIntroAnimationFinished = mutableStateOf(false)
+    private lateinit var sharedPreferences: SharedPreferences
+    private val gson = Gson()
 
     companion object {
         private const val SPEECH_REQUEST_CODE = 1
+        private const val PREF_NAME = "OxfordBotPrefs"
+        private const val KEY_CHAT_STATE = "chat_state"
+        private const val KEY_INTRO_FINISHED = "intro_finished"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize SharedPreferences (Keep state after home/standby)
+        sharedPreferences = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+
+        // Restore saved state or use default
+        restoreState()
 
         // Check host reachability on startup
         coroutineScope.launch {
@@ -100,18 +118,76 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putSerializable("chatState", chatState.value)
-        outState.putBoolean("isIntroAnimationFinished", isIntroAnimationFinished.value)
+    // Saving the current state of the application, including messages and settings
+    private fun saveState() {
+        try {
+            val chatStateJson = gson.toJson(chatState.value)
+            sharedPreferences.edit()
+                .putString(KEY_CHAT_STATE, chatStateJson)
+                .putBoolean(KEY_INTRO_FINISHED, isIntroAnimationFinished.value)
+                .apply()
+            Log.d(TAG, "State saved successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving state: ${e.message}")
+        }
     }
 
+    private fun restoreState() {
+        try {
+            // Restore intro animation state
+            isIntroAnimationFinished.value = sharedPreferences.getBoolean(KEY_INTRO_FINISHED, false)
+
+            // Restore Chat State
+            val chatStateJson = sharedPreferences.getString(KEY_CHAT_STATE, null)
+            if (chatStateJson != null) {
+                val type = object : TypeToken<ChatState>() {}.type
+                val savedChatState = gson.fromJson<ChatState>(chatStateJson, type)
+                chatState.value = savedChatState
+                Log.d(TAG, "State restored successfully: ${chatState.value.messages.size} messages")
+            } else {
+                Log.d(TAG, "No saved state found, using default")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error restoring state: ${e.message}")
+            // In case of error, use default state
+            chatState.value = ChatState()
+
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        saveState()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        saveState()
+    }
+
+    // You can override or modify the old state saving methods
+    // Override for future compatibility with onSaveInstanceState
+    // Keep the original Bundle-based state saving
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Save to Bundle for configuration changes
+        outState.putSerializable("chatState", chatState.value)
+        outState.putBoolean("isIntroAnimationFinished", isIntroAnimationFinished.value)
+
+        // Also save to SharedPreferences for process death
+        saveState()
+    }
+
+    // Keep the original Bundle-based state restoration
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
+        // Restore from Bundle for configuration changes
         val savedChatState = savedInstanceState.getSerializable("chatState") as? ChatState
         if (savedChatState != null) {
             chatState.value = savedChatState
         }
+        // Bundle restoration takes precedence over SharedPreferences, so we don't need
+        // to call restoreState() here since it was already called in onCreate()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -119,7 +195,21 @@ class MainActivity : ComponentActivity() {
 
         if (requestCode == SPEECH_REQUEST_CODE && resultCode == RESULT_OK) {
             val spokenText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.get(0)
-            chatState.value = chatState.value.copy(inputText = spokenText ?: "")
+            if (spokenText != null) {
+                // Append the spoken text to the existing input text instead of replacing it
+                val currentText = chatState.value.inputText
+                val updatedText = if (currentText.isEmpty()) {
+                    spokenText
+                } else {
+                    // Add a space between existing text and new spoken text if needed
+                    if (currentText.endsWith(" ")) {
+                        currentText + spokenText
+                    } else {
+                        "$currentText $spokenText"
+                    }
+                }
+                chatState.value = chatState.value.copy(inputText = updatedText)
+            }
         }
     }
 
@@ -136,7 +226,7 @@ class MainActivity : ComponentActivity() {
     // Here's the fully updated handleApiResponse method that processes all response paths
 
     private fun handleApiResponse(response: ApiResponse) {
-        Log.d(TAG, "Raw API response: ${response.response}")
+        LogManager.d(TAG, "Raw API response: ${response.response}")
 
         try {
             // First, check if the response contains choices with message content
@@ -200,7 +290,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Log.d(TAG, "Full processed message content: $messageContent")
+            LogManager.d(TAG, "Full processed message content: $messageContent")
 
             if (messageContent.isNotEmpty()) {
                 // Process the message content to add citations
@@ -213,13 +303,13 @@ class MainActivity : ComponentActivity() {
                 )
                 speak(messageContent) // Not adding citations to speech
             } else {
-                Log.e(TAG, "Received empty message content")
+                LogManager.e(TAG, "Received empty message content")
                 handleUnexpectedResponse("Empty response received")
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing response: ${e.message}")
-            Log.e(TAG, "Stack trace: ${Log.getStackTraceString(e)}")
+            LogManager.e(TAG, "Error parsing response: ${e.message}")
+            LogManager.e(TAG, "Stack trace: ${Log.getStackTraceString(e)}")
             // Use the raw response if JSON parsing fails
             var messageContent = response.response.trim()
 
@@ -231,7 +321,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Log.d(TAG, "Full raw message content: $messageContent")
+            LogManager.d(TAG, "Full raw message content: $messageContent")
 
             // Process the message content to add citations
             val processedContent = processResponseWithCitations(messageContent)
@@ -246,7 +336,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleUnexpectedResponse(responseString: String) {
-        Log.w(TAG, "Unexpected response: $responseString")
+        LogManager.w(TAG, "Unexpected response: $responseString")
         val message = Message("system", "Unexpected response: $responseString")
         chatState.value = chatState.value.copy(
             messages = chatState.value.messages + message,
@@ -291,6 +381,7 @@ class MainActivity : ComponentActivity() {
 
         // Add state for showing RAG Data screen
         val showRagDataScreen = remember { mutableStateOf(false) }
+        val showLogScreen = remember {mutableStateOf(false)} // New state for log screen
 
         val errorHandler = CoroutineExceptionHandler { _, exception ->
             Log.e(TAG, "Coroutine exception: ${exception.message}")
@@ -317,6 +408,9 @@ class MainActivity : ComponentActivity() {
                     },
                     onRagDataClick = {
                         showRagDataScreen.value = true
+                    },
+                    onLogClick = { // Add handler for log screen
+                        showLogScreen.value = true
                     }
                 )
             }
@@ -354,83 +448,117 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = backgroundColor
                 ) {
-                    if (showRagDataScreen.value) {
-                        RagDataScreen(
-                            chatState = chatState,
-                            onClose = {
-                                showRagDataScreen.value = false
-                            }
-                        )
-                    } else if (!isIntroAnimationFinished.value && configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-                        IntroScreen(
-                            onAnimationFinished = {
-                                isIntroAnimationFinished.value = true
-                            }
-                        )
-                    } else {
-                        ChatScreen(
-                            chatState = chatState,
-                            onSendPrompt = { prompt ->
-                                coroutineScope.launch(errorHandler) {
-                                    hostReachable.value = pingHostAsync(SparkOneBrain)
-                                    if (hostReachable.value) {
-                                        try {
-                                            // Create a chat completion request with selected file references
-                                            val apiMessage = ApiMessage("user", prompt)
+                    when {
+                        showLogScreen.value -> {
+                            LogScreen(
+                                onClose = {
+                                    showLogScreen.value = false
+                                }
+                            )
+                        }
 
-                                            // Only include selected RAG files
-                                            val selectedFiles = chatState.value.ragFiles
-                                                .filter { it.isSelected }
-                                                .map { FileReference(id = it.id) }
+                        showRagDataScreen.value -> {
+                            RagDataScreen(
+                                chatState = chatState,
+                                onClose = {
+                                    showRagDataScreen.value = false
+                                }
+                            )
+                        }
 
-                                            val chatCompletionRequest = ChatCompletionRequest(
-                                                model = "qwen3:8b",
-                                                messages = listOf(apiMessage),
-                                                chat_id = "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec",
-                                                files = selectedFiles
-                                            )
+                        !isIntroAnimationFinished.value && configuration.orientation == Configuration.ORIENTATION_PORTRAIT -> {
+                            IntroScreen(
+                                onAnimationFinished = {
+                                    isIntroAnimationFinished.value = true
+                                }
+                            )
+                        }
 
-                                            Log.d(TAG, "Sending API request: $chatCompletionRequest")
-                                            val response = apiService.generateResponse(chatCompletionRequest)
-                                            Log.d(TAG, "Received API response: $response")
-                                            handleApiResponse(response)
-                                        } catch (e: Exception) {
-                                            when (e) {
-                                                is SocketTimeoutException -> {
-                                                    Log.e(TAG, "Socket timeout during API call: ${e.message}")
-                                                    val errorMessage = Message(
-                                                        role = "system",
-                                                        content = "The server took too long to respond. Please try again later."
-                                                    )
-                                                    chatState.value = chatState.value.copy(
-                                                        messages = chatState.value.messages + errorMessage
-                                                    )
-                                                }
-                                                else -> {
-                                                    Log.e(TAG, "Error during API call: ${e.message}")
-                                                    Log.e(TAG, "Stack trace: ${Log.getStackTraceString(e)}")
-                                                    val errorMessage = Message(
-                                                        role = "system",
-                                                        content = "An error occurred: ${e.message}\n\nPlease try again or contact support if the problem persists."
-                                                    )
-                                                    chatState.value = chatState.value.copy(
-                                                        messages = chatState.value.messages + errorMessage
-                                                    )
+                        else -> {
+                            ChatScreen(
+                                chatState = chatState,
+                                onSendPrompt = { prompt ->
+                                    coroutineScope.launch(errorHandler) {
+                                        hostReachable.value = pingHostAsync(SparkOneBrain)
+                                        if (hostReachable.value) {
+                                            try {
+                                                // Create a chat completion request with selected file references
+                                                val apiMessage = ApiMessage("user", prompt)
+
+                                                // Only include selected RAG files
+                                                val selectedFiles = chatState.value.ragFiles
+                                                    .filter { it.isSelected }
+                                                    .map { FileReference(id = it.id) }
+
+                                                val chatCompletionRequest = ChatCompletionRequest(
+                                                    model = "qwen3:8b",
+                                                    messages = listOf(apiMessage),
+                                                    chat_id = "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec",
+                                                    files = selectedFiles
+                                                )
+
+                                                LogManager.d(
+                                                    TAG,
+                                                    "Sending API request: $chatCompletionRequest"
+                                                )
+                                                val response = apiService.generateResponse(
+                                                    chatCompletionRequest
+                                                )
+                                                LogManager.d(
+                                                    TAG,
+                                                    "Received API response: $response"
+                                                )
+                                                handleApiResponse(response)
+                                            } catch (e: Exception) {
+                                                when (e) {
+                                                    is SocketTimeoutException -> {
+                                                        LogManager.e(
+                                                            TAG,
+                                                            "Socket timeout during API call: ${e.message}"
+                                                        )
+                                                        val errorMessage = Message(
+                                                            role = "system",
+                                                            content = "The server took too long to respond. Please try again later."
+                                                        )
+                                                        chatState.value = chatState.value.copy(
+                                                            messages = chatState.value.messages + errorMessage
+                                                        )
+                                                    }
+
+                                                    else -> {
+                                                        LogManager.e(
+                                                            TAG,
+                                                            "Error during API call: ${e.message}"
+                                                        )
+                                                        LogManager.e(
+                                                            TAG,
+                                                            "Stack trace: ${
+                                                                Log.getStackTraceString(e)
+                                                            }"
+                                                        )
+                                                        val errorMessage = Message(
+                                                            role = "system",
+                                                            content = "An error occurred: ${e.message}\n\nPlease try again or contact support if the problem persists."
+                                                        )
+                                                        chatState.value = chatState.value.copy(
+                                                            messages = chatState.value.messages + errorMessage
+                                                        )
+                                                    }
                                                 }
                                             }
+                                        } else {
+                                            val networkErrorMessage = Message(
+                                                role = "system",
+                                                content = "Network Connectivity Error. Please Check your Internet Connection and Try Again."
+                                            )
+                                            chatState.value = chatState.value.copy(
+                                                messages = chatState.value.messages + networkErrorMessage
+                                            )
                                         }
-                                    } else {
-                                        val networkErrorMessage = Message(
-                                            role = "system",
-                                            content = "Network Connectivity Error. Please Check your Internet Connection and Try Again."
-                                        )
-                                        chatState.value = chatState.value.copy(
-                                            messages = chatState.value.messages + networkErrorMessage
-                                        )
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -442,7 +570,8 @@ class MainActivity : ComponentActivity() {
     fun DrawerContent(
         chatState: MutableState<ChatState>,
         onClose: () -> Unit,
-        onRagDataClick: () -> Unit
+        onRagDataClick: () -> Unit,
+        onLogClick: () -> Unit
     ) {
         Column(
             modifier = Modifier
@@ -450,21 +579,67 @@ class MainActivity : ComponentActivity() {
                 .background(Navy)
                 .padding(top = 32.dp)
         ) {
-            // App name/title
-            Text(
-                text = "Techno-Bot",
-                color = Gold,
-                style = MaterialTheme.typography.h6,
+            // Make the app title clickable to close the drawer
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
-            )
+                    .clickable { onClose() }  // Close drawer when clicked
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Techno-Bot",
+                    color = Gold,
+                    style = MaterialTheme.typography.h6
+                )
+
+                // Optional: Add a visual indication that this is clickable
+                Text(
+                    text = "← Back",
+                    color = LightBlue,
+                    style = MaterialTheme.typography.caption,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
 
             Divider(color = LightBlue, thickness = 1.dp)
 
             // Menu items
             MenuItem("Models", onClose)
-            MenuItem("Log", onClose)
+
+            // Log menu item with log count badge
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onLogClick()
+                        onClose()
+                    }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Log",
+                    color = Gold
+                )
+
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = LightBlue,
+                            shape = CircleShape
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "${LogManager.logs.size}",
+                        color = Color.White,
+                        style = MaterialTheme.typography.caption
+                    )
+                }
+            }
 
             // RAG Data menu item with badge showing selected count
             Row(
@@ -863,6 +1038,7 @@ data class ChatState(
     val isAnimationVisible: Boolean = false,
     val ragFiles: List<RagFile> = listOf(
         RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide"),
+        RagFile( "d4d7b17b-7397-4af9-b9ee-d6e081dd1196","Table of Workcells Robots, Presses and HMI units"),
         RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math"),
         RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety"),
         RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary"),
@@ -887,10 +1063,12 @@ data class ChatState(
         RagFile( "2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual"),
         RagFile( "37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual"),
         RagFile( "d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual"),
-        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual"),
+        RagFile( "d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual"),
         RagFile( "df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual"),
         RagFile( "7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual"),
-        RagFile( "af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual")
+        RagFile( "af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual"),
+        RagFile( "4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)"),
+        RagFile ( "a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual")
     )
 ) : Serializable
 
