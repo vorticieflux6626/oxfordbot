@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.*
@@ -791,29 +794,39 @@ class MainActivity : ComponentActivity() {
     fun MessageItem(message: Message) {
         Log.d("MessageItem", "Displaying message: $message")
         Column(modifier = Modifier.padding(16.dp)) {
-            SelectionContainer {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "${message.role}: ",
-                        color = Color.Green,
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .disableSelection()
-                    )
-                    Text(
-                        text = message.content,
-                        color = Gold,
-                        modifier = Modifier
-                            .weight(1f)
-                            .selectable(
-                                selected = false,
-                                onClick = {},
-                                indication = rememberRipple(bounded = true, color = LightBlue),
-                                interactionSource = remember { MutableInteractionSource() }
-                            )
-                            .background(Navy),
-                        softWrap = true
-                    )
+            // Define custom selection colors
+            val customSelectionColors = TextSelectionColors(
+                handleColor = Color.White,
+                backgroundColor = LightBlue.copy(alpha = 0.3f)
+            )
+
+            CompositionLocalProvider(
+                LocalTextSelectionColors provides customSelectionColors
+            ) {
+                SelectionContainer {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "${message.role}: ",
+                            color = Color.Green,
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .disableSelection()
+                        )
+                        Text(
+                            text = message.content,
+                            color = Gold,
+                            modifier = Modifier
+                                .weight(1f)
+                                .selectable(
+                                    selected = false,
+                                    onClick = {},
+                                    indication = rememberRipple(bounded = true, color = LightBlue),
+                                    interactionSource = remember { MutableInteractionSource() }
+                                )
+                                .background(Navy),
+                            softWrap = true
+                        )
+                    }
                 }
             }
         }
