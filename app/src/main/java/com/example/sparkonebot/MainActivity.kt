@@ -14,10 +14,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
-//import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-//import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -28,7 +26,6 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.rounded.Phone
-//import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,10 +46,6 @@ import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ButtonDefaults
 import com.example.oxfordbot.ui.theme.*
-//import com.example.oxfordbot.LogManager
-//import com.example.oxfordbot.LogLevel
-//import com.example.oxfordbot.LogEntry
-//import com.example.oxfordbot.LogScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.io.IOException
@@ -63,18 +56,14 @@ import java.util.*
 import java.io.StringReader
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-//import com.google.gson.JsonSyntaxException
-//import com.google.gson.JsonObject
-//import com.google.gson.JsonPrimitive
 import com.google.gson.JsonElement
 import com.google.gson.stream.JsonReader
 import com.google.gson.reflect.TypeToken
+import androidx.core.content.edit
 
 // Global Variables
 val MyAppIcons = Icons.Rounded
 val hostReachable = mutableStateOf(false)
-//const val SparkOneBrain: String = "151.213.208.190"
-//const val SparkOneBrain: String = "76.35.172.143"
 const val SparkOneBrain: String = "24.26.41.112"
 const val SparkOneBrainLocal: String = "192.168.254.131"
 
@@ -86,7 +75,10 @@ class MainActivity : ComponentActivity() {
     private var textToSpeech: TextToSpeech? = null
     private val isIntroAnimationFinished = mutableStateOf(false)
     private lateinit var sharedPreferences: SharedPreferences
-    private val gson = Gson()
+    //private val gson = Gson()
+    private val gson = GsonBuilder()
+        .serializeNulls() // Include null fields
+        .create()
 
     companion object {
         private const val SPEECH_REQUEST_CODE = 1
@@ -98,11 +90,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Test line to clear old JSON serial data
         // Initialize SharedPreferences (Keep state after home/standby)
         sharedPreferences = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
+        // Add this line at the start of onCreate() - TEMPORARY FOR TESTING
+        //sharedPreferences.edit().clear().apply()
+        //LogManager.i(TAG, "SharedPreferences cleared for testing")
+
         // Restore saved state or use default
         restoreState()
+
+        // Fix any URL mismatches
+        ensureRagFilesMatch()
+
+        // Debugging LOG call for ragFile object
+        logRagFileDetails("After restore")
 
         // Check host reachability on startup
         coroutineScope.launch {
@@ -129,6 +132,12 @@ class MainActivity : ComponentActivity() {
     // Saving the current state of the application, including messages and settings
     private fun saveState() {
         try {
+            // Log the URLs before saving
+            Log.d(TAG, "Before saving state, URLs for RAG files:")
+            chatState.value.ragFiles.forEach { ragFile ->
+                Log.d(TAG, "${ragFile.displayName}: URL = '${ragFile.url}'")
+            }
+
             val chatStateJson = gson.toJson(chatState.value)
             sharedPreferences.edit()
                 .putString(KEY_CHAT_STATE, chatStateJson)
@@ -150,16 +159,22 @@ class MainActivity : ComponentActivity() {
             if (chatStateJson != null) {
                 val type = object : TypeToken<ChatState>() {}.type
                 val savedChatState = gson.fromJson<ChatState>(chatStateJson, type)
+
+                // Log the URLs after restoring
+                Log.d(TAG, "After restoring state, URLs for RAG files:")
+                logRagFileDetails("After JSON deserialization")
+
                 chatState.value = savedChatState
                 Log.d(TAG, "State restored successfully: ${chatState.value.messages.size} messages")
             } else {
                 Log.d(TAG, "No saved state found, using default")
+                logRagFileDetails("Default state") // ragFile debugging
+
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring state: ${e.message}")
             // In case of error, use default state
             chatState.value = ChatState()
-
         }
     }
 
@@ -225,6 +240,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         textToSpeech?.stop()
         textToSpeech?.shutdown()
+
     }
 
     private val lenientGson: Gson by lazy {
@@ -911,35 +927,59 @@ class MainActivity : ComponentActivity() {
         LogManager.d(TAG, "Attempting to open URL: $urlStr")
 
         try {
-            // Validate and process the URL
-            val url = if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) {
-                Uri.parse("https://$urlStr")
+            // Ensure URL is properly formatted
+            val cleanUrl = urlStr.trim()
+            val url = if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+                Uri.parse("https://$cleanUrl")
             } else {
-                Uri.parse(urlStr)
+                Uri.parse(cleanUrl)
             }
 
-            val intent = Intent(Intent.ACTION_VIEW, url)
+            // Create a more explicit intent
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(url, getMimeType(cleanUrl))
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addCategory(Intent.CATEGORY_BROWSABLE)
 
             // Check if there's an app that can handle this intent
             if (intent.resolveActivity(context.packageManager) != null) {
                 context.startActivity(intent)
                 LogManager.d(TAG, "Successfully opened URL: $url")
             } else {
-                LogManager.w(TAG, "No application found to handle URL: $url")
-                Toast.makeText(
-                    context,
-                    "No application found that can open this link",
-                    Toast.LENGTH_SHORT
-                ).show()
+                // Try a more generic intent approach
+                LogManager.w(TAG, "No direct handler for URL: $url, trying browsable intent")
+                val browserIntent = Intent(Intent.ACTION_VIEW, url)
+                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                try {
+                    context.startActivity(browserIntent)
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Failed with browser intent: ${e.message}")
+                    Toast.makeText(
+                        context,
+                        "No application found to open: $cleanUrl",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Failed to open URL: ${e.message}", e)
             Toast.makeText(
                 context,
-                "Failed to open link: ${e.message}",
-                Toast.LENGTH_SHORT
+                "Error opening link: ${e.message}",
+                Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    // Helper function to determine MIME type from URL
+    private fun getMimeType(url: String): String? {
+        return when {
+            url.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
+            url.endsWith(".txt", ignoreCase = true) -> "text/plain"
+            url.endsWith(".doc", ignoreCase = true) -> "application/msword"
+            url.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            else -> null  // Let the system determine the type
         }
     }
 
@@ -966,6 +1006,14 @@ class MainActivity : ComponentActivity() {
         chatState: MutableState<ChatState>,
         onClose: () -> Unit
     ) {
+        // Log RagFile details when screen is displayed
+        LaunchedEffect(Unit) {
+            LogManager.i(TAG, "RagDataScreen: Displaying ${chatState.value.ragFiles.size} RagFile objects")
+            chatState.value.ragFiles.forEachIndexed { index, ragFile ->
+                LogManager.i(TAG, "RagFile[$index]: id='${ragFile.id}', displayName='${ragFile.displayName}', " +
+                        "url='${ragFile.url}', isSelected=${ragFile.isSelected}")
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1085,6 +1133,14 @@ class MainActivity : ComponentActivity() {
                                 color = Color.Gray,
                                 style = MaterialTheme.typography.caption
                             )
+                            // Display URL only if it exists
+                            if (!ragFile.url.isNullOrEmpty()) {
+                                Text(
+                                    text = ragFile.url,
+                                    color = LightBlue,
+                                    style = MaterialTheme.typography.caption
+                                )
+                            }
                         }
                     }
 
@@ -1142,6 +1198,47 @@ class MainActivity : ComponentActivity() {
         return responseText + citationsBuilder.toString()
     }
 
+    // Add this function to MainActivity.kt
+    private fun logRagFileDetails(tag: String) {
+        LogManager.i(TAG, "$tag: Logging details for ${chatState.value.ragFiles.size} RagFile objects")
+
+        chatState.value.ragFiles.forEachIndexed { index, ragFile ->
+            LogManager.i(TAG, "RagFile[$index]: id='${ragFile.id}', displayName='${ragFile.displayName}', " +
+                    "url='${ragFile.url}', isSelected=${ragFile.isSelected}")
+        }
+    }
+
+    // Add this function to MainActivity.kt
+    private fun ensureRagFilesMatch() {
+        // Get the current definition from code
+        val defaultRagFiles = ChatState().ragFiles
+
+        // Create a map of display name -> url
+        val urlMap = defaultRagFiles.associate { it.displayName to it.url }
+
+        // Update ragFiles based on display name (which is more stable than ID)
+        val updatedRagFiles = chatState.value.ragFiles.map { ragFile ->
+            if (urlMap.containsKey(ragFile.displayName)) {
+                // Only update URL if it's empty or different
+                val correctUrl = urlMap[ragFile.displayName] ?: ""
+                if (ragFile.url != correctUrl) {
+                    LogManager.i(TAG, "Fixing URL for '${ragFile.displayName}': '${ragFile.url}' -> '$correctUrl'")
+                    ragFile.copy(url = correctUrl)
+                } else {
+                    ragFile
+                }
+            } else {
+                ragFile
+            }
+        }
+
+        // Update state if changes were made
+        if (updatedRagFiles != chatState.value.ragFiles) {
+            chatState.value = chatState.value.copy(ragFiles = updatedRagFiles)
+            LogManager.i(TAG, "Updated RagFile URLs based on display names")
+        }
+    }
+
 }
 
 private fun Modifier.disableSelection(): Modifier = composed {
@@ -1151,8 +1248,6 @@ private fun Modifier.disableSelection(): Modifier = composed {
         }
     }
 }
-
-
 
 data class Selection(val start: Int, val end: Int)
 
@@ -1164,36 +1259,36 @@ data class ChatState(
     val ragFiles: List<RagFile> = listOf(
         RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.txt"),
         RagFile("d4d7b17b-7397-4af9-b9ee-d6e081dd1196","Table of Workcells Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.txt"),
-        RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", ""),
-        RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", ""),
-        RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", ""),
-        RagFile("b40db982-31c1-4509-a83e-12721414d0b9", "Plastic Technician's Toolbox Volume 4A - Clamp End", ""),
-        RagFile("827d3a3c-88a4-402f-9fbd-75b3870a0483", "Plastic Technician's Toolbox Volume 4B - Auxiliary Equipment", ""),
-        RagFile("44d95954-ec6b-4014-8f7c-75756f8f60c0", "Plastic Technician's Toolbox Volume 5A - Part Design", ""),
-        RagFile("69c94350-76cf-4cdf-9470-073335650543", "Plastic Technician's Toolbox Volume 5B - Mold Base Standard Components", ""),
-        RagFile("efb987a5-60b0-47a7-bc3b-76acbb0120c7", "Plastic Technician's Toolbox Volume 5C - Mold Design", ""),
-        RagFile("73471eb3-5f11-43e3-887e-6c2b3b6b007b", "Plastic Technician's Toolbox Volume 5D - Runners", ""),
-        RagFile("1e280199-160d-4b4d-a246-20d3cc57a504", "Plastic Technician's Toolbox Volume 5E - Hot Runner Systems", ""),
-        RagFile("92f5d18e-94a9-4de0-84cb-b98e033a5d17", "Plastic Technician's Toolbox Volume 5F - Ejection", ""),
-        RagFile("48a8a134-2797-4d04-9c51-10351e03ac61", "Plastic Technician's Toolbox Volume 5G - Dealing with Undercuts", ""),
-        RagFile("b869f50c-2883-4ccf-b694-fd583f906985", "Plastic Technician's Toolbox Volume 6A - Plastic Flow", ""),
-        RagFile("9c563182-4ae6-4ecd-80c8-8c514c069e65", "Plastic Technician's Toolbox Volume 6B - Optimizing the Molding Process", ""),
-        RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians", ""),
-        RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations", ""),
-        RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process", ""),
-        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting", ""),
-        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual", ""),
-        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual", ""),
-        RagFile("c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual", ""),
-        RagFile("2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual", ""),
-        RagFile("37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual", ""),
-        RagFile("d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual", ""),
-        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual", ""),
-        RagFile("df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual", ""),
-        RagFile("7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual", ""),
-        RagFile("af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual", ""),
-        RagFile("4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)", ""),
-        RagFile("a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual", "")
+        RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", "https://sparkonelabs.com/RAG_pdfs/18036_01.pdf"),
+        RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", "https://sparkonelabs.com/RAG_pdfs/18036_02.pdf"),
+        RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", "https://sparkonelabs.com/RAG_pdfs/18036_03.pdf"),
+        RagFile("b40db982-31c1-4509-a83e-12721414d0b9", "Plastic Technician's Toolbox Volume 4A - Clamp End", "https://sparkonelabs.com/RAG_pdfs/18036_04a.pdf"),
+        RagFile("827d3a3c-88a4-402f-9fbd-75b3870a0483", "Plastic Technician's Toolbox Volume 4B - Auxiliary Equipment", "https://sparkonelabs.com/RAG_pdfs/18036_04b.pdf"),
+        RagFile("44d95954-ec6b-4014-8f7c-75756f8f60c0", "Plastic Technician's Toolbox Volume 5A - Part Design", "https://sparkonelabs.com/RAG_pdfs/18036_05a.pdf"),
+        RagFile("69c94350-76cf-4cdf-9470-073335650543", "Plastic Technician's Toolbox Volume 5B - Mold Base Standard Components", "https://sparkonelabs.com/RAG_pdfs/18036_05b.pdf"),
+        RagFile("efb987a5-60b0-47a7-bc3b-76acbb0120c7", "Plastic Technician's Toolbox Volume 5C - Mold Design", "https://sparkonelabs.com/RAG_pdfs/18036_05c.pdf"),
+        RagFile("73471eb3-5f11-43e3-887e-6c2b3b6b007b", "Plastic Technician's Toolbox Volume 5D - Runners", "https://sparkonelabs.com/RAG_pdfs/18036_05d.pdf"),
+        RagFile("1e280199-160d-4b4d-a246-20d3cc57a504", "Plastic Technician's Toolbox Volume 5E - Hot Runner Systems", "https://sparkonelabs.com/RAG_pdfs/18036_05e.pdf"),
+        RagFile("92f5d18e-94a9-4de0-84cb-b98e033a5d17", "Plastic Technician's Toolbox Volume 5F - Ejection", "https://sparkonelabs.com/RAG_pdfs/18036_05f.pdf"),
+        RagFile("48a8a134-2797-4d04-9c51-10351e03ac61", "Plastic Technician's Toolbox Volume 5G - Dealing with Undercuts", "https://sparkonelabs.com/RAG_pdfs/18036_05g.pdf"),
+        RagFile("b869f50c-2883-4ccf-b694-fd583f906985", "Plastic Technician's Toolbox Volume 6A - Plastic Flow", "https://sparkonelabs.com/RAG_pdfs/18036_06a.pdf"),
+        RagFile("9c563182-4ae6-4ecd-80c8-8c514c069e65", "Plastic Technician's Toolbox Volume 6B - Optimizing the Molding Process", "https://sparkonelabs.com/RAG_pdfs/18036_06b.pdf"),
+        RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians", "https://sparkonelabs.com/RAG_pdfs/18036_06c.pdf"),
+        RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations", "https://sparkonelabs.com/RAG_pdfs/18036_06d.pdf"),
+        RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process", "https://sparkonelabs.com/RAG_pdfs/18036_06e.pdf"),
+        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting", "https://sparkonelabs.com/RAG_pdfs/18036_06f.pdf"),
+        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual", "https://sparkonelabs.com/RAG_pdfs/Fanuc_R-30iA_and_R-30iB.pdf"),
+        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual", "https://sparkonelabs.com/RAG_pdfs/Fanuc_Programming_Manual.pdf"),
+        RagFile("c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_R-30iB_and_R-30iB_Mate_Plus_Controller_Maintenance_Manual.pdf"),
+        RagFile("2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_IO_Unit_Model_Connection_and_Maintenance_Manual.pdf"),
+        RagFile("37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_R-30iB_and_R-30iB_Plus_Controller_Maintenance_Manual.pdf"),
+        RagFile("d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_R-30iB_Plus_and_R-30iB_Mate_Plus_Controller_Software_Error_Code_Manual.pdf"),
+        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_M-20iB_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_M-710iC_50_70_50H_50S_45M_50E_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_R-2000iB_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_R-2000iC_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)", "https://sparkonelabs.com/RAG_pdfs/eDART_Process_Control_Software_v10.xx_Manual_06.23.2017.pdf"),
+        RagFile("a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual", "https://sparkonelabs.com/RAG_pdfs/RJG_eDart_getting_started.pdf")
     )
 ) : Serializable
 
@@ -1207,15 +1302,9 @@ data class Message(
     }
 }
 
-//data class PingResult(
-//    val isReachable: Boolean,
-//    val responseTime: Long? = null,
-//    val errorMessage: String? = null
-//)
-
 data class RagFile(
     val id: String,
     val displayName: String,
-    val url: String = "", // New URL field for PDF reference
+    val url: String, // No default value, force explicit assignment
     var isSelected: Boolean = false
 )

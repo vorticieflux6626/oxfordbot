@@ -18,7 +18,7 @@ interface ApiService {
     suspend fun generateResponse(@Body request: ChatCompletionRequest): ApiResponse
 
     companion object {
-        private const val BASE_URL = "http://$SparkOneBrain:8080/"
+        private const val BASE_URL = "http://$SparkOneBrain:5555/"
 
         fun create(): ApiService {
             val client = OkHttpClient.Builder()
