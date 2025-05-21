@@ -9,13 +9,15 @@ import android.os.Bundle
 import android.util.Log
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
-import androidx.compose.foundation.interaction.MutableInteractionSource
+//import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.selection.selectable
+//import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -26,7 +28,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.rounded.Phone
-import androidx.compose.material.ripple.rememberRipple
+//import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,20 +36,23 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.Badge
-import androidx.compose.material.BadgedBox
+//import androidx.compose.material.BadgedBox
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ButtonDefaults
 import com.example.oxfordbot.ui.theme.*
-import com.example.oxfordbot.LogManager
-import com.example.oxfordbot.LogLevel
-import com.example.oxfordbot.LogEntry
-import com.example.oxfordbot.LogScreen
+//import com.example.oxfordbot.LogManager
+//import com.example.oxfordbot.LogLevel
+//import com.example.oxfordbot.LogEntry
+//import com.example.oxfordbot.LogScreen
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.io.IOException
@@ -58,9 +63,9 @@ import java.util.*
 import java.io.StringReader
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonSyntaxException
-import com.google.gson.JsonObject
-import com.google.gson.JsonPrimitive
+//import com.google.gson.JsonSyntaxException
+//import com.google.gson.JsonObject
+//import com.google.gson.JsonPrimitive
 import com.google.gson.JsonElement
 import com.google.gson.stream.JsonReader
 import com.google.gson.reflect.TypeToken
@@ -803,32 +808,138 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(
                 LocalTextSelectionColors provides customSelectionColors
             ) {
-                SelectionContainer {
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                if (message.content.contains("<link:")) {
+                    // Parse and render content with clickable links
+                    val parts = message.content.split("\n\n---\n")
+                    val mainContent = parts[0]
+                    val referencesSection = if (parts.size > 1) parts[1] else ""
+
+                    // Main content
+                    SelectionContainer {
                         Text(
-                            text = "${message.role}: ",
-                            color = Color.Green,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .disableSelection()
-                        )
-                        Text(
-                            text = message.content,
+                            text = mainContent,
                             color = Gold,
-                            modifier = Modifier
-                                .weight(1f)
-                                .selectable(
-                                    selected = false,
-                                    onClick = {},
-                                    indication = rememberRipple(bounded = true, color = LightBlue),
-                                    interactionSource = remember { MutableInteractionSource() }
-                                )
-                                .background(Navy),
+                            modifier = Modifier.fillMaxWidth(),
                             softWrap = true
                         )
                     }
+
+                    // References with clickable links
+                    if (referencesSection.isNotEmpty()) {
+                        Text(
+                            text = "References:",
+                            color = Color.Green,
+                            style = MaterialTheme.typography.subtitle1,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                        )
+
+                        // Parse and display each reference line
+                        val referenceLines = referencesSection.replace("**References:**\n", "").split("\n")
+                        referenceLines.forEach { line ->
+                            if (line.isNotEmpty()) {
+                                ReferenceLink(line)
+                            }
+                        }
+                    }
+                } else {
+                    // Regular selection container for normal messages
+                    SelectionContainer {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "${message.role}: ",
+                                color = Color.Green,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .disableSelection()
+                            )
+                            Text(
+                                text = message.content,
+                                color = Gold,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(Navy),
+                                softWrap = true
+                            )
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    @Composable
+    fun ReferenceLink(line: String) {
+        val context = LocalContext.current
+        val TAG = "ReferenceLink"
+
+        // Parse the link outside of the composable rendering
+        val linkPattern = "<link:(.+?)>(.+?)</link>".toRegex()
+        val matchResult = linkPattern.find(line)
+
+        if (matchResult != null) {
+            // Extract the URL and text safely
+            val urlPart = matchResult.groups[1]?.value ?: ""
+            val textPart = matchResult.groups[2]?.value ?: ""
+            val prefix = if (matchResult.range.first > 0) line.substring(0, matchResult.range.first) else ""
+
+            // Log for debugging
+            LogManager.d(TAG, "Found link: URL=$urlPart, Text=$textPart")
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = prefix, color = Gold)
+
+                Text(
+                    text = textPart,
+                    color = LightBlue,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.clickable {
+                        // Handle URL opening in the click handler
+                        openUrlSafely(context, urlPart)
+                    }
+                )
+            }
+        } else {
+            // No link found, just show the text
+            Text(text = line, color = Gold)
+        }
+    }
+
+    // Helper function to safely open URLs
+    private fun openUrlSafely(context: Context, urlStr: String) {
+        val TAG = "openUrlSafely"
+        LogManager.d(TAG, "Attempting to open URL: $urlStr")
+
+        try {
+            // Validate and process the URL
+            val url = if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) {
+                Uri.parse("https://$urlStr")
+            } else {
+                Uri.parse(urlStr)
+            }
+
+            val intent = Intent(Intent.ACTION_VIEW, url)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            // Check if there's an app that can handle this intent
+            if (intent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(intent)
+                LogManager.d(TAG, "Successfully opened URL: $url")
+            } else {
+                LogManager.w(TAG, "No application found to handle URL: $url")
+                Toast.makeText(
+                    context,
+                    "No application found that can open this link",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Failed to open URL: ${e.message}", e)
+            Toast.makeText(
+                context,
+                "Failed to open link: ${e.message}",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -1011,7 +1122,7 @@ class MainActivity : ComponentActivity() {
         // Build citation references section
         val citationsBuilder = StringBuilder("\n\n---\n**References:**\n")
 
-        // Get only the selected RAG files - THIS IS THE KEY CHANGE
+        // Get only the selected RAG files
         val selectedRagFiles = this.chatState.value.ragFiles.filter { it.isSelected }
 
         citations.sorted().forEach { citationNumber ->
@@ -1020,8 +1131,9 @@ class MainActivity : ComponentActivity() {
 
             // Make sure index is valid within selected files
             if (index >= 0 && index < selectedRagFiles.size) {
-                val ragFile = selectedRagFiles[index] // Use selectedRagFiles instead of all ragFiles
-                citationsBuilder.append("[${citationNumber}] ${ragFile.displayName}\n")
+                val ragFile = selectedRagFiles[index]
+                // Add URL as clickable link - use special marker for parsing later
+                citationsBuilder.append("[${citationNumber}] <link:${ragFile.url}>${ragFile.displayName}</link>\n")
             } else {
                 citationsBuilder.append("[${citationNumber}] Unknown reference\n")
             }
@@ -1050,38 +1162,38 @@ data class ChatState(
     val inputText: String = "",
     val isAnimationVisible: Boolean = false,
     val ragFiles: List<RagFile> = listOf(
-        RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide"),
-        RagFile( "d4d7b17b-7397-4af9-b9ee-d6e081dd1196","Table of Workcells Robots, Presses and HMI units"),
-        RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math"),
-        RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety"),
-        RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary"),
-        RagFile("b40db982-31c1-4509-a83e-12721414d0b9", "Plastic Technician's Toolbox Volume 4A - Clamp End"),
-        RagFile("827d3a3c-88a4-402f-9fbd-75b3870a0483", "Plastic Technician's Toolbox Volume 4B - Auxiliary Equipment"),
-        RagFile("44d95954-ec6b-4014-8f7c-75756f8f60c0", "Plastic Technician's Toolbox Volume 5A - Part Design"),
-        RagFile("69c94350-76cf-4cdf-9470-073335650543", "Plastic Technician's Toolbox Volume 5B - Mold Base Standard Components"),
-        RagFile("efb987a5-60b0-47a7-bc3b-76acbb0120c7", "Plastic Technician's Toolbox Volume 5C - Mold Design"),
-        RagFile("73471eb3-5f11-43e3-887e-6c2b3b6b007b", "Plastic Technician's Toolbox Volume 5D - Runners"),
-        RagFile("1e280199-160d-4b4d-a246-20d3cc57a504", "Plastic Technician's Toolbox Volume 5E - Hot Runner Systems"),
-        RagFile("92f5d18e-94a9-4de0-84cb-b98e033a5d17", "Plastic Technician's Toolbox Volume 5F - Ejection"),
-        RagFile("48a8a134-2797-4d04-9c51-10351e03ac61", "Plastic Technician's Toolbox Volume 5G - Dealing with Undercuts"),
-        RagFile("b869f50c-2883-4ccf-b694-fd583f906985", "Plastic Technician's Toolbox Volume 6A - Plastic Flow"),
-        RagFile("9c563182-4ae6-4ecd-80c8-8c514c069e65", "Plastic Technician's Toolbox Volume 6B - Optimizing the Molding Process"),
-        RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians"),
-        RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations"),
-        RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process"),
-        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting"),
-        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual"),
-        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual"),
-        RagFile( "c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual"),
-        RagFile( "2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual"),
-        RagFile( "37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual"),
-        RagFile( "d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual"),
-        RagFile( "d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual"),
-        RagFile( "df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual"),
-        RagFile( "7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual"),
-        RagFile( "af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual"),
-        RagFile( "4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)"),
-        RagFile ( "a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual")
+        RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.txt"),
+        RagFile("d4d7b17b-7397-4af9-b9ee-d6e081dd1196","Table of Workcells Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.txt"),
+        RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", ""),
+        RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", ""),
+        RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", ""),
+        RagFile("b40db982-31c1-4509-a83e-12721414d0b9", "Plastic Technician's Toolbox Volume 4A - Clamp End", ""),
+        RagFile("827d3a3c-88a4-402f-9fbd-75b3870a0483", "Plastic Technician's Toolbox Volume 4B - Auxiliary Equipment", ""),
+        RagFile("44d95954-ec6b-4014-8f7c-75756f8f60c0", "Plastic Technician's Toolbox Volume 5A - Part Design", ""),
+        RagFile("69c94350-76cf-4cdf-9470-073335650543", "Plastic Technician's Toolbox Volume 5B - Mold Base Standard Components", ""),
+        RagFile("efb987a5-60b0-47a7-bc3b-76acbb0120c7", "Plastic Technician's Toolbox Volume 5C - Mold Design", ""),
+        RagFile("73471eb3-5f11-43e3-887e-6c2b3b6b007b", "Plastic Technician's Toolbox Volume 5D - Runners", ""),
+        RagFile("1e280199-160d-4b4d-a246-20d3cc57a504", "Plastic Technician's Toolbox Volume 5E - Hot Runner Systems", ""),
+        RagFile("92f5d18e-94a9-4de0-84cb-b98e033a5d17", "Plastic Technician's Toolbox Volume 5F - Ejection", ""),
+        RagFile("48a8a134-2797-4d04-9c51-10351e03ac61", "Plastic Technician's Toolbox Volume 5G - Dealing with Undercuts", ""),
+        RagFile("b869f50c-2883-4ccf-b694-fd583f906985", "Plastic Technician's Toolbox Volume 6A - Plastic Flow", ""),
+        RagFile("9c563182-4ae6-4ecd-80c8-8c514c069e65", "Plastic Technician's Toolbox Volume 6B - Optimizing the Molding Process", ""),
+        RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians", ""),
+        RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations", ""),
+        RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process", ""),
+        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting", ""),
+        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual", ""),
+        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual", ""),
+        RagFile("c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual", ""),
+        RagFile("2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual", ""),
+        RagFile("37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual", ""),
+        RagFile("d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual", ""),
+        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual", ""),
+        RagFile("df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual", ""),
+        RagFile("7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual", ""),
+        RagFile("af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual", ""),
+        RagFile("4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)", ""),
+        RagFile("a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual", "")
     )
 ) : Serializable
 
@@ -1095,14 +1207,15 @@ data class Message(
     }
 }
 
-data class PingResult(
-    val isReachable: Boolean,
-    val responseTime: Long? = null,
-    val errorMessage: String? = null
-)
+//data class PingResult(
+//    val isReachable: Boolean,
+//    val responseTime: Long? = null,
+//    val errorMessage: String? = null
+//)
 
 data class RagFile(
     val id: String,
     val displayName: String,
+    val url: String = "", // New URL field for PDF reference
     var isSelected: Boolean = false
 )
