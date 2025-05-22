@@ -90,6 +90,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Initialize LogManager with crash handling - ADD THIS LINE
+        LogManager.initialize(this)
+
+        // Log app startup
+        try {
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            LogManager.i(TAG, "App started - version: ${packageInfo.versionName}")
+        } catch (e: Exception) {
+            LogManager.i(TAG, "App started - version: unknown")
+        }
+
         // Test line to clear old JSON serial data
         // Initialize SharedPreferences (Keep state after home/standby)
         sharedPreferences = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -129,50 +140,91 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Saving the current state of the application, including messages and settings
+    // Also update your saveState method to be more robust:
     private fun saveState() {
         try {
-            // Log the URLs before saving
-            Log.d(TAG, "Before saving state, URLs for RAG files:")
-            chatState.value.ragFiles.forEach { ragFile ->
-                Log.d(TAG, "${ragFile.displayName}: URL = '${ragFile.url}'")
-            }
+            LogManager.d(TAG, "Starting saveState...")
 
-            val chatStateJson = gson.toJson(chatState.value)
+            // Create a serializable copy of ChatState with only essential data
+            val serializableChatState = SerializableChatState(
+                messages = chatState.value.messages.map { message ->
+                    SerializableMessage(
+                        role = message.role,
+                        content = message.content,
+                        id = message.id
+                    )
+                },
+                inputText = chatState.value.inputText,
+                isAnimationVisible = false, // Don't persist animation state
+                ragFiles = chatState.value.ragFiles.map { ragFile ->
+                    SerializableRagFile(
+                        id = ragFile.id,
+                        displayName = ragFile.displayName,
+                        url = ragFile.url,
+                        isSelected = ragFile.isSelected
+                    )
+                }
+            )
+
+            val chatStateJson = gson.toJson(serializableChatState)
             sharedPreferences.edit()
                 .putString(KEY_CHAT_STATE, chatStateJson)
                 .putBoolean(KEY_INTRO_FINISHED, isIntroAnimationFinished.value)
                 .apply()
-            Log.d(TAG, "State saved successfully")
+
+            LogManager.d(TAG, "State saved successfully to SharedPreferences")
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving state: ${e.message}")
+            LogManager.logCaughtException(TAG, "Error saving state", e)
         }
     }
 
+    // Update your restoreState method:
     private fun restoreState() {
         try {
+            LogManager.d(TAG, "Starting restoreState...")
+
             // Restore intro animation state
             isIntroAnimationFinished.value = sharedPreferences.getBoolean(KEY_INTRO_FINISHED, false)
 
             // Restore Chat State
             val chatStateJson = sharedPreferences.getString(KEY_CHAT_STATE, null)
             if (chatStateJson != null) {
-                val type = object : TypeToken<ChatState>() {}.type
-                val savedChatState = gson.fromJson<ChatState>(chatStateJson, type)
+                val type = object : TypeToken<SerializableChatState>() {}.type
+                val savedChatState = gson.fromJson<SerializableChatState>(chatStateJson, type)
 
-                // Log the URLs after restoring
-                Log.d(TAG, "After restoring state, URLs for RAG files:")
-                logRagFileDetails("After JSON deserialization")
+                // Convert back to your ChatState
+                val messages = savedChatState.messages.map { serializableMessage ->
+                    Message(
+                        role = serializableMessage.role,
+                        content = serializableMessage.content,
+                        id = serializableMessage.id
+                    )
+                }
 
-                chatState.value = savedChatState
-                Log.d(TAG, "State restored successfully: ${chatState.value.messages.size} messages")
+                val ragFiles = savedChatState.ragFiles.map { serializableRagFile ->
+                    RagFile(
+                        id = serializableRagFile.id,
+                        displayName = serializableRagFile.displayName,
+                        url = serializableRagFile.url,
+                        isSelected = serializableRagFile.isSelected
+                    )
+                }
+
+                chatState.value = ChatState(
+                    messages = messages,
+                    inputText = savedChatState.inputText,
+                    isAnimationVisible = false,
+                    ragFiles = ragFiles
+                )
+
+                LogManager.d(TAG, "State restored successfully: ${messages.size} messages")
             } else {
-                Log.d(TAG, "No saved state found, using default")
-                logRagFileDetails("Default state") // ragFile debugging
-
+                LogManager.d(TAG, "No saved state found, using default")
             }
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error restoring state: ${e.message}")
+            LogManager.logCaughtException(TAG, "Error restoring state", e)
             // In case of error, use default state
             chatState.value = ChatState()
         }
@@ -193,24 +245,45 @@ class MainActivity : ComponentActivity() {
     // Keep the original Bundle-based state saving
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        // Save to Bundle for configuration changes
-        outState.putSerializable("chatState", chatState.value)
-        outState.putBoolean("isIntroAnimationFinished", isIntroAnimationFinished.value)
 
-        // Also save to SharedPreferences for process death
-        saveState()
+        try {
+            LogManager.d(TAG, "Saving instance state...")
+
+            // Don't save to Bundle anymore - just use SharedPreferences
+            // The Bundle serialization is causing the crash
+            outState.putBoolean("isIntroAnimationFinished", isIntroAnimationFinished.value)
+
+            // Save to SharedPreferences instead (this works fine)
+            saveState()
+
+            LogManager.d(TAG, "Instance state saved successfully")
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error saving instance state", e)
+            // Don't let the crash propagate - just save what we can
+            try {
+                outState.putBoolean("isIntroAnimationFinished", isIntroAnimationFinished.value)
+            } catch (e2: Exception) {
+                LogManager.logCaughtException(TAG, "Even basic state saving failed", e2)
+            }
+        }
     }
 
-    // Keep the original Bundle-based state restoration
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
-        // Restore from Bundle for configuration changes
-        val savedChatState = savedInstanceState.getSerializable("chatState") as? ChatState
-        if (savedChatState != null) {
-            chatState.value = savedChatState
+
+        try {
+            LogManager.d(TAG, "Restoring instance state...")
+
+            // Only restore simple values from Bundle
+            isIntroAnimationFinished.value = savedInstanceState.getBoolean("isIntroAnimationFinished", false)
+
+            // ChatState will be restored from SharedPreferences in onCreate()
+            LogManager.d(TAG, "Instance state restored successfully")
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error restoring instance state", e)
         }
-        // Bundle restoration takes precedence over SharedPreferences, so we don't need
-        // to call restoreState() here since it was already called in onCreate()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -250,12 +323,62 @@ class MainActivity : ComponentActivity() {
     // Here's the fully updated handleApiResponse method that processes all response paths
 
     private fun handleApiResponse(response: ApiResponse) {
-        LogManager.d(TAG, "Raw API response: ${response.response}")
-
         try {
-            // First, check if the response contains choices with message content
-            if (response.choices != null && response.choices.isNotEmpty() && response.choices[0].message?.content != null) {
-                var messageContent = response.choices[0].message!!.content!!
+            LogManager.d(TAG, "Raw API response: ${response.response}")
+
+            try {
+                // First, check if the response contains choices with message content
+                if (response.choices != null && response.choices.isNotEmpty() && response.choices[0].message?.content != null) {
+                    var messageContent = response.choices[0].message!!.content!!
+
+                    // Extract only the part after </think> if it exists
+                    if (messageContent.contains("</think>")) {
+                        val parts = messageContent.split("</think>", limit = 2)
+                        if (parts.size > 1) {
+                            messageContent = parts[1].trim()
+                        }
+                    }
+
+                    if (messageContent.isNotEmpty()) {
+                        // Process the message content to add citations
+                        val processedContent = processResponseWithCitations(messageContent)
+
+                        val message = Message("assistant", processedContent)
+                        chatState.value = chatState.value.copy(
+                            messages = chatState.value.messages + message,
+                            isAnimationVisible = false
+                        )
+                        speak(messageContent) // Not adding citations to speech to keep it natural
+                        return
+                    }
+                }
+
+                // Fall back to the old parsing method if the above doesn't work
+                val jsonReader = JsonReader(StringReader(response.response))
+                jsonReader.isLenient = true
+                val jsonElement: JsonElement = lenientGson.fromJson(jsonReader, JsonElement::class.java)
+
+                var messageContent = when {
+                    jsonElement.isJsonObject -> {
+                        val jsonObject = jsonElement.asJsonObject
+                        if (jsonObject.has("response")) {
+                            jsonObject.get("response").asString
+                        } else {
+                            "Unexpected JSON structure: $jsonObject"
+                        }
+                    }
+                    jsonElement.isJsonPrimitive -> {
+                        val jsonPrimitive = jsonElement.asJsonPrimitive
+                        if (jsonPrimitive.isString) {
+                            jsonPrimitive.asString
+                        } else {
+                            "Unexpected JSON primitive: $jsonPrimitive"
+                        }
+                    }
+                    else -> {
+                        response.response // Use the raw response if JSON parsing fails
+                    }
+                }
 
                 // Extract only the part after </think> if it exists
                 if (messageContent.contains("</think>")) {
@@ -264,6 +387,8 @@ class MainActivity : ComponentActivity() {
                         messageContent = parts[1].trim()
                     }
                 }
+
+                LogManager.d(TAG, "Full processed message content: $messageContent")
 
                 if (messageContent.isNotEmpty()) {
                     // Process the message content to add citations
@@ -274,49 +399,28 @@ class MainActivity : ComponentActivity() {
                         messages = chatState.value.messages + message,
                         isAnimationVisible = false
                     )
-                    speak(messageContent) // Not adding citations to speech to keep it natural
-                    return
+                    speak(messageContent) // Not adding citations to speech
+                } else {
+                    LogManager.e(TAG, "Received empty message content")
+                    handleUnexpectedResponse("Empty response received")
                 }
-            }
 
-            // Fall back to the old parsing method if the above doesn't work
-            val jsonReader = JsonReader(StringReader(response.response))
-            jsonReader.isLenient = true
-            val jsonElement: JsonElement = lenientGson.fromJson(jsonReader, JsonElement::class.java)
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Error parsing response: ${e.message}")
+                LogManager.e(TAG, "Stack trace: ${Log.getStackTraceString(e)}")
+                // Use the raw response if JSON parsing fails
+                var messageContent = response.response.trim()
 
-            var messageContent = when {
-                jsonElement.isJsonObject -> {
-                    val jsonObject = jsonElement.asJsonObject
-                    if (jsonObject.has("response")) {
-                        jsonObject.get("response").asString
-                    } else {
-                        "Unexpected JSON structure: $jsonObject"
+                // Extract only the part after </think> if it exists
+                if (messageContent.contains("</think>")) {
+                    val parts = messageContent.split("</think>", limit = 2)
+                    if (parts.size > 1) {
+                        messageContent = parts[1].trim()
                     }
                 }
-                jsonElement.isJsonPrimitive -> {
-                    val jsonPrimitive = jsonElement.asJsonPrimitive
-                    if (jsonPrimitive.isString) {
-                        jsonPrimitive.asString
-                    } else {
-                        "Unexpected JSON primitive: $jsonPrimitive"
-                    }
-                }
-                else -> {
-                    response.response // Use the raw response if JSON parsing fails
-                }
-            }
 
-            // Extract only the part after </think> if it exists
-            if (messageContent.contains("</think>")) {
-                val parts = messageContent.split("</think>", limit = 2)
-                if (parts.size > 1) {
-                    messageContent = parts[1].trim()
-                }
-            }
+                LogManager.d(TAG, "Full raw message content: $messageContent")
 
-            LogManager.d(TAG, "Full processed message content: $messageContent")
-
-            if (messageContent.isNotEmpty()) {
                 // Process the message content to add citations
                 val processedContent = processResponseWithCitations(messageContent)
 
@@ -326,36 +430,16 @@ class MainActivity : ComponentActivity() {
                     isAnimationVisible = false
                 )
                 speak(messageContent) // Not adding citations to speech
-            } else {
-                LogManager.e(TAG, "Received empty message content")
-                handleUnexpectedResponse("Empty response received")
             }
-
         } catch (e: Exception) {
-            LogManager.e(TAG, "Error parsing response: ${e.message}")
-            LogManager.e(TAG, "Stack trace: ${Log.getStackTraceString(e)}")
-            // Use the raw response if JSON parsing fails
-            var messageContent = response.response.trim()
+            LogManager.logCaughtException(TAG, "Error processing API response", e)
 
-            // Extract only the part after </think> if it exists
-            if (messageContent.contains("</think>")) {
-                val parts = messageContent.split("</think>", limit = 2)
-                if (parts.size > 1) {
-                    messageContent = parts[1].trim()
-                }
-            }
-
-            LogManager.d(TAG, "Full raw message content: $messageContent")
-
-            // Process the message content to add citations
-            val processedContent = processResponseWithCitations(messageContent)
-
-            val message = Message("assistant", processedContent)
+            // Add fallback error message
+            val message = Message("system", "Error processing server response. Check logs for details.")
             chatState.value = chatState.value.copy(
                 messages = chatState.value.messages + message,
                 isAnimationVisible = false
             )
-            speak(messageContent) // Not adding citations to speech
         }
     }
 
@@ -407,12 +491,13 @@ class MainActivity : ComponentActivity() {
         val showRagDataScreen = remember { mutableStateOf(false) }
         val showLogScreen = remember {mutableStateOf(false)} // New state for log screen
 
+        // 6. Add crash logging to your coroutine error handler:
         val errorHandler = CoroutineExceptionHandler { _, exception ->
-            Log.e(TAG, "Coroutine exception: ${exception.message}")
-            Log.e(TAG, "Stack trace: ${Log.getStackTraceString(exception)}")
+            LogManager.logCrash("MainActivity", "Coroutine exception occurred", exception)
+
             val errorMessage = Message(
                 role = "system",
-                content = "An error occurred: ${exception.message}\n\nStack trace: ${Log.getStackTraceString(exception)}"
+                content = "An error occurred: ${exception.message}\n\nThis error has been logged. Please check the log screen for details."
             )
             chatState.value = chatState.value.copy(
                 messages = chatState.value.messages + errorMessage
@@ -910,8 +995,18 @@ class MainActivity : ComponentActivity() {
                     color = LightBlue,
                     textDecoration = TextDecoration.Underline,
                     modifier = Modifier.clickable {
-                        // Handle URL opening in the click handler
-                        openUrlSafely(context, urlPart)
+                        // Handle URL opening with comprehensive error handling
+                        try {
+                            LogManager.d(TAG, "User clicked on link: $urlPart")
+                            openUrlSafely(context, urlPart)
+                        } catch (e: Exception) {
+                            LogManager.logCaughtException(TAG, "Exception in link click handler", e)
+                            Toast.makeText(
+                                context,
+                                "Error opening link: ${e.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 )
             }
@@ -921,49 +1016,87 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Helper function to safely open URLs
+    // Replace your openUrlSafely function with this improved version
     private fun openUrlSafely(context: Context, urlStr: String) {
         val TAG = "openUrlSafely"
-        LogManager.d(TAG, "Attempting to open URL: $urlStr")
 
         try {
-            // Ensure URL is properly formatted
-            val cleanUrl = urlStr.trim()
-            val url = if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-                Uri.parse("https://$cleanUrl")
-            } else {
-                Uri.parse(cleanUrl)
+            LogManager.d(TAG, "Attempting to open URL: '$urlStr'")
+
+            // Validate input
+            if (urlStr.isBlank()) {
+                LogManager.w(TAG, "Empty or blank URL provided")
+                Toast.makeText(context, "Invalid URL: empty", Toast.LENGTH_SHORT).show()
+                return
             }
 
-            // Create a more explicit intent
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(url, getMimeType(cleanUrl))
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            intent.addCategory(Intent.CATEGORY_BROWSABLE)
+            // Clean and validate URL
+            val cleanUrl = urlStr.trim()
+            LogManager.d(TAG, "Cleaned URL: '$cleanUrl'")
 
-            // Check if there's an app that can handle this intent
-            if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(intent)
-                LogManager.d(TAG, "Successfully opened URL: $url")
-            } else {
-                // Try a more generic intent approach
-                LogManager.w(TAG, "No direct handler for URL: $url, trying browsable intent")
-                val browserIntent = Intent(Intent.ACTION_VIEW, url)
-                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Build proper URI
+            val uri = try {
+                if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+                    Uri.parse("https://$cleanUrl")
+                } else {
+                    Uri.parse(cleanUrl)
+                }
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Failed to parse URI from: $cleanUrl", e)
+                Toast.makeText(context, "Invalid URL format", Toast.LENGTH_SHORT).show()
+                return
+            }
 
-                try {
-                    context.startActivity(browserIntent)
-                } catch (e: Exception) {
-                    LogManager.e(TAG, "Failed with browser intent: ${e.message}")
-                    Toast.makeText(
-                        context,
-                        "No application found to open: $cleanUrl",
-                        Toast.LENGTH_LONG
-                    ).show()
+            LogManager.d(TAG, "Parsed URI: $uri")
+
+            // Validate the URI
+            if (uri == null || uri.scheme == null) {
+                LogManager.w(TAG, "Invalid URI or missing scheme: $uri")
+                Toast.makeText(context, "Invalid URL format", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // For PDF files, try to open directly in browser first
+            if (cleanUrl.contains(".pdf", ignoreCase = true)) {
+                LogManager.d(TAG, "PDF detected, trying browser-first approach")
+                if (tryOpenInBrowser(context, uri)) {
+                    return
                 }
             }
+
+            // Create a simple VIEW intent without MIME type initially
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+
+            // Check if there's an app that can handle this intent
+            val resolveInfo = try {
+                context.packageManager.resolveActivity(intent, 0)
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error resolving activity for intent", e)
+                null
+            }
+
+            if (resolveInfo != null) {
+                try {
+                    context.startActivity(intent)
+                    LogManager.i(TAG, "Successfully opened URL: $uri")
+                    return
+                } catch (e: Exception) {
+                    LogManager.logCaughtException(TAG, "Failed to start activity with resolved intent", e)
+                }
+            }
+
+            // Fallback: try to open in browser
+            LogManager.d(TAG, "Standard intent failed, trying browser fallback")
+            if (!tryOpenInBrowser(context, uri)) {
+                // Final fallback: show chooser
+                tryShowChooser(context, uri)
+            }
+
         } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to open URL: ${e.message}", e)
+            LogManager.logCaughtException(TAG, "Unexpected error in openUrlSafely", e)
             Toast.makeText(
                 context,
                 "Error opening link: ${e.message}",
@@ -972,14 +1105,126 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Helper function to determine MIME type from URL
+    // Helper function to specifically try opening in browser
+    private fun tryOpenInBrowser(context: Context, uri: Uri): Boolean {
+        val TAG = "tryOpenInBrowser"
+
+        val browserIntents = listOf(
+            // Try Chrome
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage("com.android.chrome")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            // Try Firefox
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage("org.mozilla.firefox")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            // Try default browser
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage("com.android.browser")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            // Try any browser
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+        )
+
+        for (intent in browserIntents) {
+            try {
+                if (context.packageManager.resolveActivity(intent, 0) != null) {
+                    context.startActivity(intent)
+                    LogManager.i(TAG, "Successfully opened in browser: $uri")
+                    return true
+                }
+            } catch (e: Exception) {
+                LogManager.d(TAG, "Browser attempt failed: ${e.message}")
+                continue
+            }
+        }
+
+        LogManager.w(TAG, "All browser attempts failed for: $uri")
+        return false
+    }
+
+    // Helper function to show chooser as last resort
+    private fun tryShowChooser(context: Context, uri: Uri) {
+        val TAG = "tryShowChooser"
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val chooser = Intent.createChooser(intent, "Open with...")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            context.startActivity(chooser)
+            LogManager.i(TAG, "Showed chooser for: $uri")
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Even chooser failed", e)
+            Toast.makeText(
+                context,
+                "No application found to open: $uri",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun tryFallbackUrlOpen(context: Context, uri: Uri) {
+        val TAG = "tryFallbackUrlOpen"
+
+        try {
+            LogManager.d(TAG, "Trying fallback approach for URI: $uri")
+
+            val fallbackIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Remove MIME type in case it was causing issues
+                type = null
+            }
+
+            context.startActivity(fallbackIntent)
+            LogManager.i(TAG, "Fallback approach succeeded for: $uri")
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Fallback approach also failed", e)
+
+            // Last resort - try to open in browser explicitly
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    setPackage("com.android.browser") // Try default browser
+                }
+                context.startActivity(browserIntent)
+                LogManager.i(TAG, "Browser-specific intent succeeded")
+            } catch (e2: Exception) {
+                LogManager.logCaughtException(TAG, "Even browser-specific intent failed", e2)
+                Toast.makeText(
+                    context,
+                    "No application found to open: $uri",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    // 5. Improve the getMimeType function:
     private fun getMimeType(url: String): String? {
-        return when {
-            url.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
-            url.endsWith(".txt", ignoreCase = true) -> "text/plain"
-            url.endsWith(".doc", ignoreCase = true) -> "application/msword"
-            url.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            else -> null  // Let the system determine the type
+        return try {
+            when {
+                url.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
+                url.endsWith(".txt", ignoreCase = true) -> "text/plain"
+                url.endsWith(".doc", ignoreCase = true) -> "application/msword"
+                url.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                url.contains("pdf", ignoreCase = true) -> "application/pdf"
+                else -> null
+            }
+        } catch (e: Exception) {
+            LogManager.logCaughtException("getMimeType", "Error determining MIME type for: $url", e)
+            null
         }
     }
 
@@ -1257,7 +1502,7 @@ data class ChatState(
     val inputText: String = "",
     val isAnimationVisible: Boolean = false,
     val ragFiles: List<RagFile> = listOf(
-        RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.txt"),
+        RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.html"),
         RagFile("d4d7b17b-7397-4af9-b9ee-d6e081dd1196","Table of Workcells Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.txt"),
         RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", "https://sparkonelabs.com/RAG_pdfs/18036_01.pdf"),
         RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", "https://sparkonelabs.com/RAG_pdfs/18036_02.pdf"),
@@ -1307,4 +1552,25 @@ data class RagFile(
     val displayName: String,
     val url: String, // No default value, force explicit assignment
     var isSelected: Boolean = false
+)
+
+// Serializable versions of your data classes for safe JSON serialization
+data class SerializableChatState(
+    val messages: List<SerializableMessage> = emptyList(),
+    val inputText: String = "",
+    val isAnimationVisible: Boolean = false,
+    val ragFiles: List<SerializableRagFile> = emptyList()
+)
+
+data class SerializableMessage(
+    val role: String,
+    val content: String,
+    val id: String
+)
+
+data class SerializableRagFile(
+    val id: String,
+    val displayName: String,
+    val url: String,
+    val isSelected: Boolean
 )
