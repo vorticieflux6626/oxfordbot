@@ -31,10 +31,14 @@ import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.Card
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,8 +48,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.Badge
 import androidx.compose.material.Checkbox
@@ -65,8 +72,11 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.*
+import java.util.Date
+import java.util.Locale
 import java.io.StringReader
 import java.io.File
+import java.text.SimpleDateFormat
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
@@ -95,6 +105,10 @@ class MainActivity : ComponentActivity() {
     private val gson = GsonBuilder()
         .serializeNulls() // Include null fields
         .create()
+    // For network connectivity
+    private val connectivityResults = mutableStateListOf<ConnectivityResult>()
+    private val showNetworkDetailsScreen = mutableStateOf(false)
+    private val isConnectivityTestRunning = mutableStateOf(false)
 
     companion object {
         private const val SPEECH_REQUEST_CODE = 1
@@ -507,7 +521,107 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Enhanced connectivity testing functions
+    private suspend fun testDetailedConnectivity(host: String, port: Int = 5555): ConnectivityResult {
+        return withContext(Dispatchers.IO) {
+            val startTime = System.currentTimeMillis()
 
+            try {
+                LogManager.d(TAG, "Testing connectivity to $host:$port")
+
+                // Test host reachability
+                val hostReachable = try {
+                    val inetAddress = InetAddress.getByName(host)
+                    inetAddress.isReachable(5000) // 5 second timeout
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Host reachability test failed: ${e.message}")
+                    false
+                }
+
+                // Test port connectivity
+                val portOpen = try {
+                    Socket().use { socket ->
+                        socket.connect(InetSocketAddress(host, port), 5000)
+                        true
+                    }
+                } catch (e: Exception) {
+                    LogManager.d(TAG, "Port connectivity test failed: ${e.message}")
+                    false
+                }
+
+                val responseTime = System.currentTimeMillis() - startTime
+
+                ConnectivityResult(
+                    isHostReachable = hostReachable,
+                    isPortOpen = portOpen,
+                    responseTime = responseTime,
+                    errorMessage = null,
+                    portNumber = port
+                )
+
+            } catch (e: Exception) {
+                val responseTime = System.currentTimeMillis() - startTime
+                LogManager.logCaughtException(TAG, "Connectivity test failed", e)
+
+                ConnectivityResult(
+                    isHostReachable = false,
+                    isPortOpen = false,
+                    responseTime = responseTime,
+                    errorMessage = e.message,
+                    portNumber = port
+                )
+            }
+        }
+    }
+
+    private fun runConnectivityTest() {
+        if (isConnectivityTestRunning.value) return
+
+        coroutineScope.launch {
+            isConnectivityTestRunning.value = true
+            try {
+                val result = testDetailedConnectivity(SparkOneBrain)
+                connectivityResults.add(0, result) // Add to front of list
+
+                // Keep only last 20 results
+                if (connectivityResults.size > 20) {
+                    connectivityResults.removeRange(20, connectivityResults.size)
+                }
+
+                // Update the main hostReachable state
+                hostReachable.value = result.isHostReachable && result.isPortOpen
+
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error running connectivity test", e)
+            } finally {
+                isConnectivityTestRunning.value = false
+            }
+        }
+    }
+
+    // Update the PingResult composable to be clickable
+    @Composable
+    fun PingResult(host: String) {
+        val coroutineScope = rememberCoroutineScope()
+
+        LaunchedEffect(Unit) {
+            coroutineScope.launch {
+                hostReachable.value = pingHostAsync(host)
+            }
+        }
+
+        Text(
+            text = if (hostReachable.value) "SparkOne Brain Online" else "SparkOne Brain Unreachable",
+            color = if (hostReachable.value) Color.Green else Color.Red,
+            modifier = Modifier
+                .padding(16.dp)
+                .clickable {
+                    showNetworkDetailsScreen.value = true
+                    runConnectivityTest() // Run a fresh test when clicked
+                },
+            textDecoration = TextDecoration.Underline
+        )
+    }
 
     private suspend fun pingHostAsync(host: String): Boolean {
         return withContext(Dispatchers.IO) {
@@ -562,6 +676,10 @@ class MainActivity : ComponentActivity() {
                     },
                     onLogClick = { // Add handler for log screen
                         showLogScreen.value = true
+                    },
+                    onNetworkClick = { // Add this block
+                        showNetworkDetailsScreen.value = true
+                        runConnectivityTest() // Run a fresh test when opened from menu
                     }
                 )
             }
@@ -600,11 +718,22 @@ class MainActivity : ComponentActivity() {
                     color = backgroundColor
                 ) {
                     when {
+
                         showLogScreen.value -> {
                             LogScreen(
                                 onClose = {
                                     showLogScreen.value = false
                                 }
+                            )
+                        }
+
+                        showNetworkDetailsScreen.value -> {
+                            NetworkDetailsScreen(
+                                host = SparkOneBrain,
+                                connectivityResults = connectivityResults,
+                                isTestRunning = isConnectivityTestRunning.value,
+                                onClose = { showNetworkDetailsScreen.value = false },
+                                onRunTest = { runConnectivityTest() }
                             )
                         }
 
@@ -717,13 +846,349 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Network Details Screen Composable
+    @Composable
+    fun NetworkDetailsScreen(
+        host: String,
+        connectivityResults: List<ConnectivityResult>,
+        isTestRunning: Boolean,
+        onClose: () -> Unit,
+        onRunTest: () -> Unit
+    ) {
+        val scrollState = rememberLazyListState()
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Navy)
+                .padding(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Network Connectivity",
+                        color = Gold,
+                        style = MaterialTheme.typography.h6
+                    )
+                    Text(
+                        text = "Target: $host:5555",
+                        color = LightBlue,
+                        style = MaterialTheme.typography.caption
+                    )
+                }
+
+                Row {
+                    // Test button
+                    Button(
+                        onClick = onRunTest,
+                        enabled = !isTestRunning,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        if (isTestRunning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Test", color = Color.White)
+                        }
+                    }
+
+                    // Close button
+                    Button(
+                        onClick = onClose,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
+                    ) {
+                        Text("Close", color = Color.White)
+                    }
+                }
+            }
+
+            Divider(color = LightBlue, thickness = 1.dp)
+
+            // Current Status Summary
+            if (connectivityResults.isNotEmpty()) {
+                val latestResult = connectivityResults.first()
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    backgroundColor = if (latestResult.isHostReachable && latestResult.isPortOpen)
+                        Color.Green.copy(alpha = 0.1f) else Color.Red.copy(alpha = 0.1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "Current Status",
+                            color = Gold,
+                            style = MaterialTheme.typography.subtitle1,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            StatusIndicator("Host Reachable", latestResult.isHostReachable)
+                            StatusIndicator("Port Open", latestResult.isPortOpen)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Response Time: ${latestResult.responseTime}ms",
+                            color = LightBlue,
+                            style = MaterialTheme.typography.body2
+                        )
+
+                        Text(
+                            text = "Last Tested: ${formatTimestamp(latestResult.timestamp)}",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.caption
+                        )
+
+                        if (latestResult.errorMessage != null) {
+                            Text(
+                                text = "Error: ${latestResult.errorMessage}",
+                                color = Color.Red,
+                                style = MaterialTheme.typography.caption,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Test History
+            Text(
+                text = "Test History (${connectivityResults.size})",
+                color = Gold,
+                style = MaterialTheme.typography.subtitle1,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            Divider(color = LightBlue, thickness = 0.5.dp)
+
+            // Results list
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                state = scrollState
+            ) {
+                items(connectivityResults) { result ->
+                    ConnectivityResultItem(result)
+                }
+
+                if (connectivityResults.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No test results yet.\nClick 'Test' to run connectivity check.",
+                                color = Color.Gray,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Statistics if we have results
+            if (connectivityResults.isNotEmpty()) {
+                Divider(color = LightBlue, thickness = 0.5.dp)
+
+                ConnectivityStats(connectivityResults)
+            }
+        }
+    }
+
+    @Composable
+    fun StatusIndicator(label: String, status: Boolean) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = if (status) Icons.Default.CheckCircle else Icons.Default.Close,
+                contentDescription = null,
+                tint = if (status) Color.Green else Color.Red,
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                text = label,
+                color = if (status) Color.Green else Color.Red,
+                style = MaterialTheme.typography.caption,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+    }
+
+    @Composable
+    fun ConnectivityResultItem(result: ConnectivityResult) {
+        val overallStatus = result.isHostReachable && result.isPortOpen
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (overallStatus) Color.Green.copy(alpha = 0.05f)
+                    else Color.Red.copy(alpha = 0.05f)
+                )
+                .padding(vertical = 8.dp, horizontal = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formatTimestamp(result.timestamp),
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Text(
+                    text = "${result.responseTime}ms",
+                    color = when {
+                        result.responseTime < 100 -> Color.Green
+                        result.responseTime < 500 -> Color.Yellow
+                        else -> Color.Red
+                    },
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Host: ${if (result.isHostReachable) "✓" else "✗"}",
+                    color = if (result.isHostReachable) Color.Green else Color.Red,
+                    fontSize = 12.sp
+                )
+
+                Text(
+                    text = "Port ${result.portNumber}: ${if (result.isPortOpen) "✓" else "✗"}",
+                    color = if (result.isPortOpen) Color.Green else Color.Red,
+                    fontSize = 12.sp
+                )
+            }
+
+            if (result.errorMessage != null) {
+                Text(
+                    text = "Error: ${result.errorMessage}",
+                    color = Color.Red,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+
+        Divider(
+            color = Color.DarkGray,
+            thickness = 0.5.dp
+        )
+    }
+
+    @Composable
+    fun ConnectivityStats(results: List<ConnectivityResult>) {
+        if (results.isEmpty()) return
+
+        val successfulTests = results.count { it.isHostReachable && it.isPortOpen }
+        val successRate = (successfulTests.toFloat() / results.size * 100).toInt()
+        val avgResponseTime = results.map { it.responseTime }.average().toLong()
+        val minResponseTime = results.minOf { it.responseTime }
+        val maxResponseTime = results.maxOf { it.responseTime }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            backgroundColor = Color.Black.copy(alpha = 0.3f)
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Text(
+                    text = "Statistics",
+                    color = Gold,
+                    style = MaterialTheme.typography.subtitle2,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    StatItem("Success Rate", "$successRate%")
+                    StatItem("Avg Response", "${avgResponseTime}ms")
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    StatItem("Min Response", "${minResponseTime}ms")
+                    StatItem("Max Response", "${maxResponseTime}ms")
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun StatItem(label: String, value: String) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = value,
+                color = LightBlue,
+                style = MaterialTheme.typography.body2,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = label,
+                color = Color.Gray,
+                style = MaterialTheme.typography.caption
+            )
+        }
+    }
+
+
     // Now, update the DrawerContent function to include RAG Data option
     @Composable
     fun DrawerContent(
         chatState: MutableState<ChatState>,
         onClose: () -> Unit,
         onRagDataClick: () -> Unit,
-        onLogClick: () -> Unit
+        onLogClick: () -> Unit,
+        onNetworkClick: () -> Unit
     ) {
         Column(
             modifier = Modifier
@@ -826,6 +1291,39 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onNetworkClick()
+                        onClose()
+                    }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Network",
+                    color = Gold
+                )
+
+                // Status indicator showing current connectivity
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = if (hostReachable.value) Color.Green else Color.Red,
+                            shape = CircleShape
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (hostReachable.value) "Online" else "Offline",
+                        color = Color.White,
+                        style = MaterialTheme.typography.caption
+                    )
+                }
+            }
+
         }
     }
 
@@ -1057,6 +1555,12 @@ class MainActivity : ComponentActivity() {
             // No link found, just show the text
             Text(text = line, color = Gold)
         }
+    }
+
+    // Helper function to format timestamps
+    private fun formatTimestamp(timestamp: Long): String {
+        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        return sdf.format(Date(timestamp))
     }
 
     // Replace your openUrlSafely function with this enhanced version
@@ -1656,23 +2160,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    fun PingResult(host: String) {
-        val coroutineScope = rememberCoroutineScope()
-
-        LaunchedEffect(Unit) {
-            coroutineScope.launch {
-                hostReachable.value = pingHostAsync(host)
-            }
-        }
-
-        Text(
-            text = if (hostReachable.value) "SparkOne Brain Online" else "SparkOne Brain Unreachable",
-            color = if (hostReachable.value) Color.Green else Color.Red,
-            modifier = Modifier.padding(16.dp)
-        )
-    }
-
     // Now, create a RAG Data screen component
     @Composable
     fun RagDataScreen(
@@ -2003,9 +2490,12 @@ data class SerializableRagFile(
     val isSelected: Boolean
 )
 
+// Enhanced connectivity result data class (update the existing one)
 data class ConnectivityResult(
     val isHostReachable: Boolean,
     val isPortOpen: Boolean,
     val responseTime: Long,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
+    val portNumber: Int = 5555
 )
