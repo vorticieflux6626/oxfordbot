@@ -405,12 +405,16 @@ class MainActivity : ComponentActivity() {
                     var messageContent = response.choices[0].message!!.content!!
 
                     // Extract only the part after </think> if it exists
-                    if (messageContent.contains("</think>")) {
-                        val parts = messageContent.split("</think>", limit = 2)
-                        if (parts.size > 1) {
-                            messageContent = parts[1].trim()
-                        }
-                    }
+                    //if (messageContent.contains("</think>")) {
+                    //    val parts = messageContent.split("</think>", limit = 2)
+                    //    if (parts.size > 1) {
+                    //        messageContent = parts[1].trim()
+                    //    }
+                    //}
+
+                    // Show thinking if toggled
+                    val processedContent = processThinkingContent(messageContent)
+
 
                     if (messageContent.isNotEmpty()) {
                         // Process the message content to add citations
@@ -454,12 +458,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Extract only the part after </think> if it exists
-                if (messageContent.contains("</think>")) {
-                    val parts = messageContent.split("</think>", limit = 2)
-                    if (parts.size > 1) {
-                        messageContent = parts[1].trim()
-                    }
-                }
+                val processedContent = processThinkingContent(messageContent)
 
                 LogManager.d(TAG, "Full processed message content: $messageContent")
 
@@ -527,8 +526,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
-        val utteranceId = UUID.randomUUID().toString()
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+        if (appSettings.value.enableTTS && textToSpeech != null) {
+            val utteranceId = UUID.randomUUID().toString()
+            textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+        }
     }
 
     private fun pingHost(host: String): Boolean {
@@ -976,6 +977,15 @@ class MainActivity : ComponentActivity() {
                     SettingsSection(title = "App Behavior") {
                         Column {
                             SwitchSettingCard(
+                                title = "Show Thinking",
+                                description = "Display AI reasoning process in responses",
+                                isEnabled = settings.showThinking,
+                                onToggle = { enabled ->
+                                    onSettingsChange(settings.copy(showThinking = enabled))
+                                }
+                            )
+
+                            SwitchSettingCard(
                                 title = "Text-to-Speech",
                                 description = "Enable voice output for AI responses",
                                 isEnabled = settings.enableTTS,
@@ -1064,7 +1074,7 @@ class MainActivity : ComponentActivity() {
         selectedModel: String,
         onModelSelected: (String) -> Unit
     ) {
-        val availableModels = listOf("qwen3:8b", "deepseek-r1:32b")
+        val availableModels = listOf("qwen3:8b", "qwen3:32b", "deepseek-r1:32b")
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1904,6 +1914,7 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    // Optional: Add a visual indicator in MessageItem for thinking content
     @Composable
     fun MessageItem(message: Message) {
         Log.d("MessageItem", "Displaying message: $message")
@@ -1923,14 +1934,20 @@ class MainActivity : ComponentActivity() {
                     val mainContent = parts[0]
                     val referencesSection = if (parts.size > 1) parts[1] else ""
 
-                    // Main content
-                    SelectionContainer {
-                        Text(
-                            text = mainContent,
-                            color = Gold,
-                            modifier = Modifier.fillMaxWidth(),
-                            softWrap = true
-                        )
+                    // Check if this is a thinking-formatted message
+                    if (mainContent.contains("🤔 **Thinking Process:**")) {
+                        // Render thinking content with special formatting
+                        RenderThinkingMessage(mainContent)
+                    } else {
+                        // Main content
+                        SelectionContainer {
+                            Text(
+                                text = mainContent,
+                                color = Gold,
+                                modifier = Modifier.fillMaxWidth(),
+                                softWrap = true
+                            )
+                        }
                     }
 
                     // References with clickable links
@@ -1952,22 +1969,101 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 } else {
-                    // Regular selection container for normal messages
-                    SelectionContainer {
-                        Row(modifier = Modifier.fillMaxWidth()) {
+                    // Check if this is a thinking-formatted message
+                    if (message.content.contains("🤔 **Thinking Process:**")) {
+                        RenderThinkingMessage(message.content)
+                    } else {
+                        // Regular selection container for normal messages
+                        SelectionContainer {
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "${message.role}: ",
+                                    color = Color.Green,
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .disableSelection()
+                                )
+                                Text(
+                                    text = message.content,
+                                    color = Gold,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(Navy),
+                                    softWrap = true
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Special formatting for thinking portion of response if toggled
+    @Composable
+    fun RenderThinkingMessage(content: String) {
+        // Parse the thinking-formatted content
+        val lines = content.split("\n")
+        var inThinkingBlock = false
+        var inCodeBlock = false
+
+        Column {
+            // Role indicator
+            Text(
+                text = "assistant: ",
+                color = Color.Green,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            lines.forEach { line ->
+                when {
+                    line.contains("🤔 **Thinking Process:**") -> {
+                        Text(
+                            text = "🤔 Thinking Process:",
+                            color = Color.Yellow,
+                            style = MaterialTheme.typography.subtitle1,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        inThinkingBlock = true
+                    }
+                    line == "```" && inThinkingBlock && !inCodeBlock -> {
+                        inCodeBlock = true
+                    }
+                    line == "```" && inCodeBlock -> {
+                        inCodeBlock = false
+                        inThinkingBlock = false
+                    }
+                    line.contains("**Response:**") -> {
+                        Text(
+                            text = "Response:",
+                            color = Color.Green,
+                            style = MaterialTheme.typography.subtitle1,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    inCodeBlock -> {
+                        SelectionContainer {
                             Text(
-                                text = "${message.role}: ",
-                                color = Color.Green,
+                                text = line,
+                                color = Color.Gray,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
                                 modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .disableSelection()
+                                    .fillMaxWidth()
+                                    .background(Color.Black.copy(alpha = 0.3f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                                softWrap = true
                             )
+                        }
+                    }
+                    line.isNotEmpty() -> {
+                        SelectionContainer {
                             Text(
-                                text = message.content,
+                                text = line,
                                 color = Gold,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .background(Navy),
+                                modifier = Modifier.fillMaxWidth(),
                                 softWrap = true
                             )
                         }
@@ -2027,8 +2123,9 @@ class MainActivity : ComponentActivity() {
     // Each model in open-webui has an associated chat-id for ease of configuration
     private fun getChatIdForModel(model: String): String {
         return when (model) {
-            "deepseek-r1:32b" -> "c1b40fec-2685-4e95-82c5-d591043a009d"
             "qwen3:8b" -> "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec"
+            "qwen3:32b" -> "afea4aff-3c80-49a1-a9cb-b94603e5c68b"
+            "deepseek-r1:32b" -> "c1b40fec-2685-4e95-82c5-d591043a009d"
             else -> "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec" // Default to qwen3:8b chat-id
         }
     }
@@ -2037,6 +2134,7 @@ class MainActivity : ComponentActivity() {
     private fun getModelDescription(model: String): String {
         return when (model) {
             "qwen3:8b" -> "Balanced performance and speed (Chat: ${getChatIdForModel(model).take(8)}...)"
+            "qwen3:32b" -> "Large Qwen model with enhanced capabilities (Chat: ${getChatIdForModel(model).take(8)}...)"
             "deepseek-r1:32b" -> "Large model with enhanced reasoning (Chat: ${getChatIdForModel(model).take(8)}...)"
             else -> "Unknown model"
         }
@@ -2896,6 +2994,52 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun processThinkingContent(content: String): String {
+        return if (appSettings.value.showThinking) {
+            formatThinkingContent(content)
+        } else {
+            extractResponseWithoutThinking(content)
+        }
+    }
+
+    private fun extractResponseWithoutThinking(content: String): String {
+        return if (content.contains("</think>")) {
+            val parts = content.split("</think>", limit = 2)
+            if (parts.size > 1) {
+                parts[1].trim()
+            } else {
+                content
+            }
+        } else {
+            content
+        }
+    }
+
+    private fun formatThinkingContent(content: String): String {
+        if (!content.contains("<think>") || !content.contains("</think>")) {
+            return content
+        }
+
+        val thinkPattern = """<think>(.*?)</think>""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val thinkMatch = thinkPattern.find(content)
+
+        if (thinkMatch != null) {
+            val thinkingContent = thinkMatch.groupValues[1].trim()
+            val responseContent = content.replace(thinkMatch.value, "").trim()
+
+            return buildString {
+                append("🤔 **Thinking Process:**\n")
+                append("```\n")
+                append(thinkingContent)
+                append("\n```\n\n")
+                append("**Response:**\n")
+                append(responseContent)
+            }
+        }
+
+        return content
+    }
+
 }
 
 private fun Modifier.disableSelection(): Modifier = composed {
@@ -3007,5 +3151,6 @@ data class AppSettings(
     val enableTTS: Boolean = true,
     val autoSaveChat: Boolean = true,
     val maxLogEntries: Int = 500,
-    val connectivityTestInterval: Int = 30 // seconds
+    val connectivityTestInterval: Int = 30, // seconds
+    val showThinking: Boolean = false
 ) : Serializable
