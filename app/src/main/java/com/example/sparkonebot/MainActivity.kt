@@ -772,8 +772,18 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 settings = appSettings.value,
                                 onSettingsChange = { newSettings ->
+                                    val oldModel = appSettings.value.selectedModel
+                                    val newModel = newSettings.selectedModel
+
                                     appSettings.value = newSettings
-                                    LogManager.i(TAG, "Settings updated: model=${newSettings.selectedModel}")
+
+                                    if (oldModel != newModel) {
+                                        val oldChatId = getChatIdForModel(oldModel)
+                                        val newChatId = getChatIdForModel(newModel)
+
+                                        LogManager.i(TAG, "Model changed: $oldModel -> $newModel")
+                                        LogManager.i(TAG, "Chat ID changed: $oldChatId -> $newChatId")
+                                    }
                                 },
                                 onClose = { showSettingsScreen.value = false }
                             )
@@ -800,7 +810,6 @@ class MainActivity : ComponentActivity() {
                             ChatScreen(
                                 chatState = chatState,
                                 onSendPrompt = { prompt ->
-                                    //coroutineScope.launch(errorHandler) {
                                     scope.launch(errorHandler) {
                                         hostReachable.value = pingHostAsync(SparkOneBrain)
                                         if (hostReachable.value) {
@@ -813,24 +822,29 @@ class MainActivity : ComponentActivity() {
                                                     .filter { it.isSelected }
                                                     .map { FileReference(id = it.id) }
 
+                                                // Use model-specific chat-id
+                                                val selectedModel = appSettings.value.selectedModel
+                                                val chatId = getChatIdForModel(selectedModel)
+
                                                 val chatCompletionRequest = ChatCompletionRequest(
-                                                    model = "qwen3:8b",
+                                                    model = selectedModel,
                                                     messages = listOf(apiMessage),
-                                                    chat_id = "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec",
+                                                    chat_id = chatId, // Use model-specific chat-id
                                                     files = selectedFiles
                                                 )
 
                                                 LogManager.d(
                                                     TAG,
-                                                    "Sending API request: $chatCompletionRequest"
+                                                    "Sending API request: model=$selectedModel, chat_id=$chatId"
                                                 )
-                                                val response = apiService.generateResponse(
-                                                    chatCompletionRequest
-                                                )
+
+                                                val response = apiService.generateResponse(chatCompletionRequest)
+
                                                 LogManager.d(
                                                     TAG,
                                                     "Received API response: $response"
                                                 )
+
                                                 handleApiResponse(response)
                                             } catch (e: Exception) {
                                                 when (e) {
@@ -2010,11 +2024,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Each model in open-webui has an associated chat-id for ease of configuration
+    private fun getChatIdForModel(model: String): String {
+        return when (model) {
+            "deepseek-r1:32b" -> "c1b40fec-2685-4e95-82c5-d591043a009d"
+            "qwen3:8b" -> "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec"
+            else -> "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec" // Default to qwen3:8b chat-id
+        }
+    }
+
     // Helper function to get model descriptions
     private fun getModelDescription(model: String): String {
         return when (model) {
-            "qwen3:8b" -> "Balanced performance and speed"
-            "deepseek-r1:32b" -> "Large model with enhanced reasoning"
+            "qwen3:8b" -> "Balanced performance and speed (Chat: ${getChatIdForModel(model).take(8)}...)"
+            "deepseek-r1:32b" -> "Large model with enhanced reasoning (Chat: ${getChatIdForModel(model).take(8)}...)"
             else -> "Unknown model"
         }
     }
