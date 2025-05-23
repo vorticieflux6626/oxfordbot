@@ -39,6 +39,9 @@ import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.Card
+import androidx.compose.material.RadioButton
+import androidx.compose.material.Switch
+import androidx.compose.material.SwitchDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,6 +112,9 @@ class MainActivity : ComponentActivity() {
     private val connectivityResults = mutableStateListOf<ConnectivityResult>()
     private val showNetworkDetailsScreen = mutableStateOf(false)
     private val isConnectivityTestRunning = mutableStateOf(false)
+    // Settings related
+    private val appSettings = mutableStateOf(AppSettings())
+    private val showSettingsScreen = mutableStateOf(false)
 
     companion object {
         private const val SPEECH_REQUEST_CODE = 1
@@ -116,6 +122,7 @@ class MainActivity : ComponentActivity() {
         private const val KEY_CHAT_STATE = "chat_state"
         private const val KEY_INTRO_FINISHED = "intro_finished"
         private const val STORAGE_PERMISSION_CODE = 100 // To allow PDFs to be located
+        private const val KEY_APP_SETTINGS = "app_settings"
     }
 
     // Add this method to request storage permissions
@@ -209,7 +216,7 @@ class MainActivity : ComponentActivity() {
                     )
                 },
                 inputText = chatState.value.inputText,
-                isAnimationVisible = false, // Don't persist animation state
+                isAnimationVisible = false,
                 ragFiles = chatState.value.ragFiles.map { ragFile ->
                     SerializableRagFile(
                         id = ragFile.id,
@@ -221,8 +228,11 @@ class MainActivity : ComponentActivity() {
             )
 
             val chatStateJson = gson.toJson(serializableChatState)
+            val settingsJson = gson.toJson(appSettings.value)
+
             sharedPreferences.edit()
                 .putString(KEY_CHAT_STATE, chatStateJson)
+                .putString(KEY_APP_SETTINGS, settingsJson) // Add settings saving
                 .putBoolean(KEY_INTRO_FINISHED, isIntroAnimationFinished.value)
                 .apply()
 
@@ -240,6 +250,14 @@ class MainActivity : ComponentActivity() {
 
             // Restore intro animation state
             isIntroAnimationFinished.value = sharedPreferences.getBoolean(KEY_INTRO_FINISHED, false)
+
+            // Restore settings
+            val settingsJson = sharedPreferences.getString(KEY_APP_SETTINGS, null)
+            if (settingsJson != null) {
+                val savedSettings = gson.fromJson(settingsJson, AppSettings::class.java)
+                appSettings.value = savedSettings
+                LogManager.d(TAG, "Settings restored: model=${savedSettings.selectedModel}")
+            }
 
             // Restore Chat State
             val chatStateJson = sharedPreferences.getString(KEY_CHAT_STATE, null)
@@ -281,6 +299,7 @@ class MainActivity : ComponentActivity() {
             LogManager.logCaughtException(TAG, "Error restoring state", e)
             // In case of error, use default state
             chatState.value = ChatState()
+            appSettings.value = AppSettings()
         }
     }
 
@@ -680,6 +699,9 @@ class MainActivity : ComponentActivity() {
                     onNetworkClick = { // Add this block
                         showNetworkDetailsScreen.value = true
                         runConnectivityTest() // Run a fresh test when opened from menu
+                    },
+                    onSettingsClick = { // Add this line
+                        showSettingsScreen.value = true
                     }
                 )
             }
@@ -743,6 +765,26 @@ class MainActivity : ComponentActivity() {
                                 onClose = {
                                     showRagDataScreen.value = false
                                 }
+                            )
+                        }
+
+                        showSettingsScreen.value -> {
+                            SettingsScreen(
+                                settings = appSettings.value,
+                                onSettingsChange = { newSettings ->
+                                    appSettings.value = newSettings
+                                    LogManager.i(TAG, "Settings updated: model=${newSettings.selectedModel}")
+                                },
+                                onClose = { showSettingsScreen.value = false }
+                            )
+                        }
+                        showNetworkDetailsScreen.value -> {
+                            NetworkDetailsScreen(
+                                host = SparkOneBrain,
+                                connectivityResults = connectivityResults,
+                                isTestRunning = isConnectivityTestRunning.value,
+                                onClose = { showNetworkDetailsScreen.value = false },
+                                onRunTest = { runConnectivityTest() }
                             )
                         }
 
@@ -840,6 +882,387 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // Settings Screen Composable
+    @Composable
+    fun SettingsScreen(
+        settings: AppSettings,
+        onSettingsChange: (AppSettings) -> Unit,
+        onClose: () -> Unit
+    ) {
+        val scrollState = rememberLazyListState()
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Navy)
+                .padding(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Settings",
+                    color = Gold,
+                    style = MaterialTheme.typography.h6
+                )
+
+                Button(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
+                ) {
+                    Text("Done", color = Color.White)
+                }
+            }
+
+            Divider(color = LightBlue, thickness = 1.dp)
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                state = scrollState
+            ) {
+                // Model Selection Section
+                item {
+                    SettingsSection(title = "AI Model") {
+                        ModelSelectionCard(
+                            selectedModel = settings.selectedModel,
+                            onModelSelected = { model ->
+                                onSettingsChange(settings.copy(selectedModel = model))
+                            }
+                        )
+                    }
+                }
+
+                // API Settings Section
+                item {
+                    SettingsSection(title = "API Settings") {
+                        TimeoutSettingCard(
+                            timeout = settings.apiTimeout,
+                            onTimeoutChanged = { timeout ->
+                                onSettingsChange(settings.copy(apiTimeout = timeout))
+                            }
+                        )
+                    }
+                }
+
+                // App Behavior Section
+                item {
+                    SettingsSection(title = "App Behavior") {
+                        Column {
+                            SwitchSettingCard(
+                                title = "Text-to-Speech",
+                                description = "Enable voice output for AI responses",
+                                isEnabled = settings.enableTTS,
+                                onToggle = { enabled ->
+                                    onSettingsChange(settings.copy(enableTTS = enabled))
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            SwitchSettingCard(
+                                title = "Auto-save Chat",
+                                description = "Automatically save chat history",
+                                isEnabled = settings.autoSaveChat,
+                                onToggle = { enabled ->
+                                    onSettingsChange(settings.copy(autoSaveChat = enabled))
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Logging Settings Section
+                item {
+                    SettingsSection(title = "Logging") {
+                        NumberSettingCard(
+                            title = "Max Log Entries",
+                            description = "Maximum number of log entries to keep",
+                            value = settings.maxLogEntries,
+                            range = 100..1000,
+                            step = 100,
+                            onValueChanged = { value ->
+                                onSettingsChange(settings.copy(maxLogEntries = value))
+                            }
+                        )
+                    }
+                }
+
+                // Network Settings Section
+                item {
+                    SettingsSection(title = "Network") {
+                        NumberSettingCard(
+                            title = "Test Interval",
+                            description = "Connectivity test interval (seconds)",
+                            value = settings.connectivityTestInterval,
+                            range = 10..300,
+                            step = 10,
+                            onValueChanged = { value ->
+                                onSettingsChange(settings.copy(connectivityTestInterval = value))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun SettingsSection(
+        title: String,
+        content: @Composable () -> Unit
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            Text(
+                text = title,
+                color = Gold,
+                style = MaterialTheme.typography.subtitle1,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            content()
+            Divider(
+                color = Color.DarkGray,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+    }
+
+    @Composable
+    fun ModelSelectionCard(
+        selectedModel: String,
+        onModelSelected: (String) -> Unit
+    ) {
+        val availableModels = listOf("qwen3:8b", "deepseek-r1:32b")
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color.Black.copy(alpha = 0.3f)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "Select AI Model",
+                    color = LightBlue,
+                    style = MaterialTheme.typography.body1,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                availableModels.forEach { model ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onModelSelected(model) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedModel == model,
+                            onClick = { onModelSelected(model) },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = Gold,
+                                unselectedColor = Color.Gray
+                            )
+                        )
+
+                        Column(
+                            modifier = Modifier.padding(start = 8.dp)
+                        ) {
+                            Text(
+                                text = model,
+                                color = Color.White,
+                                style = MaterialTheme.typography.body2
+                            )
+                            Text(
+                                text = getModelDescription(model),
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.caption
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun SwitchSettingCard(
+        title: String,
+        description: String,
+        isEnabled: Boolean,
+        onToggle: (Boolean) -> Unit
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color.Black.copy(alpha = 0.3f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggle(!isEnabled) }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.body1
+                    )
+                    Text(
+                        text = description,
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.caption
+                    )
+                }
+
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Gold,
+                        checkedTrackColor = Gold.copy(alpha = 0.5f),
+                        uncheckedThumbColor = Color.Gray,
+                        uncheckedTrackColor = Color.DarkGray
+                    )
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun TimeoutSettingCard(
+        timeout: Int,
+        onTimeoutChanged: (Int) -> Unit
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color.Black.copy(alpha = 0.3f)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "API Timeout",
+                    color = Color.White,
+                    style = MaterialTheme.typography.body1,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Request timeout in seconds",
+                    color = Color.Gray,
+                    style = MaterialTheme.typography.caption
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { onTimeoutChanged(maxOf(60, timeout - 60)) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
+                    ) {
+                        Text("-", color = Color.White)
+                    }
+
+                    Text(
+                        text = "${timeout}s",
+                        color = Gold,
+                        style = MaterialTheme.typography.h6
+                    )
+
+                    Button(
+                        onClick = { onTimeoutChanged(minOf(1200, timeout + 60)) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
+                    ) {
+                        Text("+", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun NumberSettingCard(
+        title: String,
+        description: String,
+        value: Int,
+        range: IntRange,
+        step: Int,
+        onValueChanged: (Int) -> Unit
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color.Black.copy(alpha = 0.3f)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.body1,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = description,
+                    color = Color.Gray,
+                    style = MaterialTheme.typography.caption
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { onValueChanged(maxOf(range.first, value - step)) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
+                    ) {
+                        Text("-", color = Color.White)
+                    }
+
+                    Text(
+                        text = "$value",
+                        color = Gold,
+                        style = MaterialTheme.typography.h6
+                    )
+
+                    Button(
+                        onClick = { onValueChanged(minOf(range.last, value + step)) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
+                    ) {
+                        Text("+", color = Color.White)
                     }
                 }
             }
@@ -1180,7 +1603,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     // Now, update the DrawerContent function to include RAG Data option
     @Composable
     fun DrawerContent(
@@ -1188,7 +1610,8 @@ class MainActivity : ComponentActivity() {
         onClose: () -> Unit,
         onRagDataClick: () -> Unit,
         onLogClick: () -> Unit,
-        onNetworkClick: () -> Unit
+        onNetworkClick: () -> Unit,
+        onSettingsClick: () -> Unit // Add this parameter
     ) {
         Column(
             modifier = Modifier
@@ -1200,7 +1623,7 @@ class MainActivity : ComponentActivity() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onClose() }  // Close drawer when clicked
+                    .clickable { onClose() }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1211,7 +1634,6 @@ class MainActivity : ComponentActivity() {
                     style = MaterialTheme.typography.h6
                 )
 
-                // Optional: Add a visual indication that this is clickable
                 Text(
                     text = "← Back",
                     color = LightBlue,
@@ -1222,8 +1644,39 @@ class MainActivity : ComponentActivity() {
 
             Divider(color = LightBlue, thickness = 1.dp)
 
-            // Menu items
-            MenuItem("Models", onClose)
+            // Settings menu item (replaces Models)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onSettingsClick()
+                        onClose()
+                    }
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Settings",
+                    color = Gold
+                )
+
+                // Show current model as a badge
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = LightBlue,
+                            shape = CircleShape
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = appSettings.value.selectedModel,
+                        color = Color.White,
+                        style = MaterialTheme.typography.caption
+                    )
+                }
+            }
 
             // Log menu item with log count badge
             Row(
@@ -1554,6 +2007,15 @@ class MainActivity : ComponentActivity() {
         } else {
             // No link found, just show the text
             Text(text = line, color = Gold)
+        }
+    }
+
+    // Helper function to get model descriptions
+    private fun getModelDescription(model: String): String {
+        return when (model) {
+            "qwen3:8b" -> "Balanced performance and speed"
+            "deepseek-r1:32b" -> "Large model with enhanced reasoning"
+            else -> "Unknown model"
         }
     }
 
@@ -2399,6 +2861,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Update your API request to use the selected model
+    private fun createChatCompletionRequest(prompt: String, selectedFiles: List<FileReference>): ChatCompletionRequest {
+        val apiMessage = ApiMessage("user", prompt)
+
+        return ChatCompletionRequest(
+            model = appSettings.value.selectedModel, // Use selected model from settings
+            messages = listOf(apiMessage),
+            chat_id = "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec",
+            files = selectedFiles
+        )
+    }
+
 }
 
 private fun Modifier.disableSelection(): Modifier = composed {
@@ -2410,6 +2884,9 @@ private fun Modifier.disableSelection(): Modifier = composed {
 }
 
 data class Selection(val start: Int, val end: Int)
+
+// Settings related
+
 
 // Then, modify the ChatState to include our RAG file selections
 data class ChatState(
@@ -2499,3 +2976,13 @@ data class ConnectivityResult(
     val timestamp: Long = System.currentTimeMillis(),
     val portNumber: Int = 5555
 )
+
+// Settings data class
+data class AppSettings(
+    val selectedModel: String = "qwen3:8b",
+    val apiTimeout: Int = 600, // seconds
+    val enableTTS: Boolean = true,
+    val autoSaveChat: Boolean = true,
+    val maxLogEntries: Int = 500,
+    val connectivityTestInterval: Int = 30 // seconds
+) : Serializable
