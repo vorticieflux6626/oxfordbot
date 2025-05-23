@@ -5,12 +5,21 @@ import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
 import android.content.SharedPreferences
+import android.content.ContentResolver
+import android.content.pm.PackageManager
+import android.database.Cursor
 import android.os.Bundle
+import android.os.Environment
+import android.os.Build
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
+import android.provider.MediaStore
 import android.util.Log
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.net.Uri
 import android.widget.Toast
+import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -39,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.Badge
-//import androidx.compose.material.BadgedBox
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Divider
@@ -51,21 +59,29 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import java.io.IOException
 import java.io.Serializable
 import java.net.InetAddress
+import java.net.Socket
+import java.net.InetSocketAddress
+import java.net.ConnectException
 import java.net.SocketTimeoutException
+import java.net.URL
 import java.util.*
 import java.io.StringReader
+import java.io.File
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.stream.JsonReader
 import com.google.gson.reflect.TypeToken
 import androidx.core.content.edit
+import androidx.core.content.ContextCompat
+import androidx.core.app.ActivityCompat
 
 // Global Variables
 val MyAppIcons = Icons.Rounded
 val hostReachable = mutableStateOf(false)
+// This is the router address when the Local Development Network is accessed remotely
 const val SparkOneBrain: String = "24.26.41.112"
-const val SparkOneBrainLocal: String = "192.168.254.131"
+//const val SparkOneBrainLocal: String = "192.168.254.131"
 
 class MainActivity : ComponentActivity() {
     private val TAG = "MainActivity"
@@ -85,6 +101,30 @@ class MainActivity : ComponentActivity() {
         private const val PREF_NAME = "OxfordBotPrefs"
         private const val KEY_CHAT_STATE = "chat_state"
         private const val KEY_INTRO_FINISHED = "intro_finished"
+        private const val STORAGE_PERMISSION_CODE = 100 // To allow PDFs to be located
+    }
+
+    // Add this method to request storage permissions
+    private fun requestStoragePermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val permissions = mutableListOf<String>()
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            }
+
+            if (permissions.isNotEmpty()) {
+                ActivityCompat.requestPermissions(this, permissions.toTypedArray(), STORAGE_PERMISSION_CODE)
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,6 +132,9 @@ class MainActivity : ComponentActivity() {
 
         // Initialize LogManager with crash handling - ADD THIS LINE
         LogManager.initialize(this)
+
+        // Request storage permissions
+        requestStoragePermissions()
 
         // Log app startup
         try {
@@ -104,10 +147,6 @@ class MainActivity : ComponentActivity() {
         // Test line to clear old JSON serial data
         // Initialize SharedPreferences (Keep state after home/standby)
         sharedPreferences = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-
-        // Add this line at the start of onCreate() - TEMPORARY FOR TESTING
-        //sharedPreferences.edit().clear().apply()
-        //LogManager.i(TAG, "SharedPreferences cleared for testing")
 
         // Restore saved state or use default
         restoreState()
@@ -135,7 +174,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             oxfordbotTheme {
-                MainScreen(chatState, apiService, coroutineScope, isIntroAnimationFinished)
+                //MainScreen(chatState, apiService, coroutineScope, isIntroAnimationFinished)
+                MainScreen(chatState, apiService, isIntroAnimationFinished)
             }
         }
     }
@@ -467,6 +507,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+
     private suspend fun pingHostAsync(host: String): Boolean {
         return withContext(Dispatchers.IO) {
             pingHost(host)
@@ -478,7 +520,7 @@ class MainActivity : ComponentActivity() {
     fun MainScreen(
         chatState: MutableState<ChatState>,
         apiService: ApiService,
-        coroutineScope: CoroutineScope,
+        //coroutineScope: CoroutineScope,
         isIntroAnimationFinished: MutableState<Boolean>
     ) {
         val backgroundColor = if (isIntroAnimationFinished.value) Navy else Color.Black
@@ -587,7 +629,8 @@ class MainActivity : ComponentActivity() {
                             ChatScreen(
                                 chatState = chatState,
                                 onSendPrompt = { prompt ->
-                                    coroutineScope.launch(errorHandler) {
+                                    //coroutineScope.launch(errorHandler) {
+                                    scope.launch(errorHandler) {
                                         hostReachable.value = pingHostAsync(SparkOneBrain)
                                         if (hostReachable.value) {
                                             try {
@@ -1016,7 +1059,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Replace your openUrlSafely function with this improved version
+    // Replace your openUrlSafely function with this enhanced version
     private fun openUrlSafely(context: Context, urlStr: String) {
         val TAG = "openUrlSafely"
 
@@ -1030,11 +1073,25 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            // Clean and validate URL
             val cleanUrl = urlStr.trim()
             LogManager.d(TAG, "Cleaned URL: '$cleanUrl'")
 
-            // Build proper URI
+            // For PDF files, check if we already have it locally
+            if (cleanUrl.contains(".pdf", ignoreCase = true)) {
+                val localFile = checkForLocalPdf(cleanUrl)
+                if (localFile != null && localFile.exists()) {
+                    LogManager.i(TAG, "Found existing PDF locally: ${localFile.absolutePath}")
+                    if (openLocalPdf(context, localFile)) {
+                        return
+                    }
+                    // If local PDF opening fails, continue with URL opening
+                    LogManager.w(TAG, "Local PDF opening failed, falling back to URL")
+                } else {
+                    LogManager.d(TAG, "PDF not found locally, will download from URL")
+                }
+            }
+
+            // Build proper URI for URL opening
             val uri = try {
                 if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
                     Uri.parse("https://$cleanUrl")
@@ -1172,6 +1229,377 @@ class MainActivity : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    // Replace your existing checkForLocalPdf function with this improved version
+    private fun checkForLocalPdf(url: String): File? {
+        val TAG = "checkForLocalPdf"
+
+        try {
+            val baseFilename = extractFilenameFromUrl(url)
+            if (baseFilename == null) {
+                LogManager.d(TAG, "Could not extract filename from URL: $url")
+                return null
+            }
+
+            LogManager.d(TAG, "Looking for local file: $baseFilename")
+
+            // Method 1: Try MediaStore API first (works with scoped storage)
+            val mediaStoreFile = findFileUsingMediaStore(baseFilename)
+            if (mediaStoreFile != null) {
+                LogManager.i(TAG, "Found file using MediaStore: ${mediaStoreFile.absolutePath}")
+                return mediaStoreFile
+            }
+
+            // Method 2: Try direct file system access (may not work on newer Android)
+            val directFile = findFileUsingDirectAccess(baseFilename)
+            if (directFile != null) {
+                LogManager.i(TAG, "Found file using direct access: ${directFile.absolutePath}")
+                return directFile
+            }
+
+            LogManager.d(TAG, "No local copy found for: $baseFilename")
+            return null
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error checking for local PDF", e)
+            return null
+        }
+    }
+
+    // New method using MediaStore API
+    private fun findFileUsingMediaStore(filename: String): File? {
+        val TAG = "findFileUsingMediaStore"
+
+        try {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+                LogManager.w(TAG, "No READ_EXTERNAL_STORAGE permission")
+                return null
+            }
+
+            val projection = arrayOf(
+                MediaStore.Files.FileColumns._ID,
+                MediaStore.Files.FileColumns.DISPLAY_NAME,
+                MediaStore.Files.FileColumns.DATA,
+                MediaStore.Files.FileColumns.SIZE
+            )
+
+            // Get filename without extension for pattern matching
+            val nameWithoutExt = if (filename.contains('.')) {
+                filename.substring(0, filename.lastIndexOf('.'))
+            } else {
+                filename
+            }
+
+            // Create selection to find files that match our pattern
+            val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ? OR " +
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf(filename, "$nameWithoutExt (%).pdf")
+
+            val cursor: Cursor? = contentResolver.query(
+                MediaStore.Files.getContentUri("external"),
+                projection,
+                selection,
+                selectionArgs,
+                "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC" // Most recent first
+            )
+
+            cursor?.use {
+                val dataColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                val nameColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                val sizeColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
+
+                while (cursor.moveToNext()) {
+                    val filePath = cursor.getString(dataColumnIndex)
+                    val fileName = cursor.getString(nameColumnIndex)
+                    val fileSize = cursor.getLong(sizeColumnIndex)
+
+                    LogManager.d(TAG, "Found potential match: $fileName at $filePath (${fileSize}KB)")
+
+                    val file = File(filePath)
+                    if (file.exists() && file.canRead()) {
+                        LogManager.i(TAG, "Verified file exists and is readable: $filePath")
+                        return file
+                    }
+                }
+            }
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error using MediaStore API", e)
+        }
+
+        return null
+    }
+
+    // Improved direct access method
+    private fun findFileUsingDirectAccess(filename: String): File? {
+        val TAG = "findFileUsingDirectAccess"
+
+        try {
+            val nameWithoutExt = if (filename.contains('.')) {
+                filename.substring(0, filename.lastIndexOf('.'))
+            } else {
+                filename
+            }
+
+            val extension = if (filename.contains('.')) {
+                filename.substring(filename.lastIndexOf('.'))
+            } else {
+                ".pdf"
+            }
+
+            // Check multiple possible download locations
+            val downloadFolders = listOf(
+                // Standard Downloads folder
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                // Alternative Downloads folder
+                File(Environment.getExternalStorageDirectory(), "Download"),
+                // Another common location
+                File("/storage/emulated/0/Download"),
+                // User's Documents folder
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                // App-specific external files directory
+                getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            )
+
+            for (folder in downloadFolders) {
+                if (folder == null || !folder.exists() || !folder.isDirectory) {
+                    continue
+                }
+
+                LogManager.d(TAG, "Searching in: ${folder.absolutePath}")
+
+                val foundFile = searchInFolder(folder, nameWithoutExt, extension)
+                if (foundFile != null) {
+                    return foundFile
+                }
+            }
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error in direct access search", e)
+        }
+
+        return null
+    }
+
+    // Helper method to search in a specific folder
+    private fun searchInFolder(folder: File, nameWithoutExt: String, extension: String): File? {
+        val TAG = "searchInFolder"
+
+        try {
+            val files = folder.listFiles() ?: return null
+            val matchingFiles = mutableListOf<File>()
+
+            for (file in files) {
+                if (!file.isFile || !file.canRead()) continue
+
+                val fileName = file.name
+
+                // Check for exact match
+                val exactName = "$nameWithoutExt$extension"
+                if (fileName.equals(exactName, ignoreCase = true)) {
+                    matchingFiles.add(file)
+                    LogManager.d(TAG, "Found exact match: $fileName")
+                    continue
+                }
+
+                // Check for numbered variants like "filename (1).pdf"
+                val numberedPattern = Regex("^${Regex.escape(nameWithoutExt)}\\s*\\(\\d+\\)${Regex.escape(extension)}$", RegexOption.IGNORE_CASE)
+                if (numberedPattern.matches(fileName)) {
+                    matchingFiles.add(file)
+                    LogManager.d(TAG, "Found numbered variant: $fileName")
+                }
+            }
+
+            if (matchingFiles.isNotEmpty()) {
+                // Return the most recently modified file
+                val mostRecent = matchingFiles.sortedByDescending { it.lastModified() }.first()
+                LogManager.i(TAG, "Returning most recent file: ${mostRecent.name}")
+                return mostRecent
+            }
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error searching in folder: ${folder.absolutePath}", e)
+        }
+
+        return null
+    }
+
+    // Handle permission request results
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        when (requestCode) {
+            STORAGE_PERMISSION_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                    LogManager.i("Permissions", "Storage permissions granted")
+                    Toast.makeText(this, "Storage permissions granted", Toast.LENGTH_SHORT).show()
+                } else {
+                    LogManager.w("Permissions", "Storage permissions denied")
+                    Toast.makeText(this, "Storage permissions needed to find downloaded files", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // Helper function to find the most recent matching file
+    private fun findMostRecentMatchingFile(folder: File, nameWithoutExt: String, extension: String): File? {
+        val TAG = "findMostRecentMatchingFile"
+
+        try {
+            val files = folder.listFiles() ?: return null
+            val matchingFiles = mutableListOf<File>()
+
+            // Collect all matching files (exact name and numbered variants)
+            for (file in files) {
+                if (file.isFile && file.canRead()) {
+                    val fileName = file.name
+
+                    // Check exact match
+                    val exactName = "$nameWithoutExt$extension"
+                    if (fileName.equals(exactName, ignoreCase = true)) {
+                        matchingFiles.add(file)
+                        continue
+                    }
+
+                    // Check numbered variants
+                    val pattern = Regex("^${Regex.escape(nameWithoutExt)}\\s*\\(\\d+\\)${Regex.escape(extension)}$", RegexOption.IGNORE_CASE)
+                    if (pattern.matches(fileName)) {
+                        matchingFiles.add(file)
+                    }
+                }
+            }
+
+            if (matchingFiles.isEmpty()) {
+                LogManager.d(TAG, "No matching files found")
+                return null
+            }
+
+            // Sort by last modified date (most recent first)
+            val mostRecent = matchingFiles.sortedByDescending { it.lastModified() }.first()
+
+            LogManager.i(TAG, "Most recent file: ${mostRecent.name} (${matchingFiles.size} variants found)")
+            LogManager.d(TAG, "File details: ${mostRecent.absolutePath}, size: ${mostRecent.length()} bytes, modified: ${java.util.Date(mostRecent.lastModified())}")
+
+            return mostRecent
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error finding most recent matching file", e)
+            return null
+        }
+    }
+
+    // Helper function to extract filename from URL
+    private fun extractFilenameFromUrl(url: String): String? {
+        return try {
+            val urlObj = URL(url)
+            val path = urlObj.path
+            val filename = path.substring(path.lastIndexOf('/') + 1)
+
+            // Make sure it has a reasonable filename
+            if (filename.isNotEmpty() && filename.contains('.')) {
+                LogManager.d("extractFilenameFromUrl", "Extracted filename: $filename")
+                filename
+            } else {
+                LogManager.w("extractFilenameFromUrl", "Invalid filename extracted: $filename")
+                null
+            }
+        } catch (e: Exception) {
+            LogManager.logCaughtException("extractFilenameFromUrl", "Error extracting filename from: $url", e)
+            null
+        }
+    }
+
+    // Function to open local PDF file
+    private fun openLocalPdf(context: Context, file: File): Boolean {
+        val TAG = "openLocalPdf"
+
+        try {
+            LogManager.d(TAG, "Attempting to open local PDF: ${file.absolutePath}")
+
+            // Create URI for the local file
+            val uri = Uri.fromFile(file)
+            LogManager.d(TAG, "Created URI: $uri")
+
+            // Try different approaches to open the PDF
+            val attempts = listOf(
+                // Attempt 1: Generic PDF viewer
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/pdf")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },
+
+                // Attempt 2: Generic file viewer
+                Intent(Intent.ACTION_VIEW).apply {
+                    setData(uri)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },
+
+                // Attempt 3: File manager approach
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "*/*")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+
+            for ((index, intent) in attempts.withIndex()) {
+                try {
+                    if (context.packageManager.resolveActivity(intent, 0) != null) {
+                        context.startActivity(intent)
+                        LogManager.i(TAG, "Successfully opened local PDF with attempt ${index + 1}")
+                        return true
+                    }
+                } catch (e: Exception) {
+                    LogManager.d(TAG, "Attempt ${index + 1} failed: ${e.message}")
+                    continue
+                }
+            }
+
+            // If all attempts fail, try chooser
+            try {
+                val chooserIntent = Intent.createChooser(
+                    Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/pdf")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                    "Open PDF with..."
+                )
+                chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooserIntent)
+                LogManager.i(TAG, "Opened local PDF with chooser")
+                return true
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Even chooser failed for local PDF", e)
+            }
+
+            return false
+
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error opening local PDF", e)
+            return false
+        }
+    }
+
+    // Also update the showFileFoundToast function to show which variant was found
+    private fun showFileFoundToast(context: Context, file: File) {
+        val sizeKB = file.length() / 1024
+        val fileName = file.name
+
+        val message = if (fileName.contains("(") && fileName.contains(")")) {
+            "Opening local copy: $fileName (${sizeKB}KB)"
+        } else {
+            "Opening local copy (${sizeKB}KB)"
+        }
+
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        LogManager.i("showFileFoundToast", "Showing toast for file: $fileName")
     }
 
     private fun tryFallbackUrlOpen(context: Context, uri: Uri) {
@@ -1573,4 +2001,11 @@ data class SerializableRagFile(
     val displayName: String,
     val url: String,
     val isSelected: Boolean
+)
+
+data class ConnectivityResult(
+    val isHostReachable: Boolean,
+    val isPortOpen: Boolean,
+    val responseTime: Long,
+    val errorMessage: String? = null
 )
