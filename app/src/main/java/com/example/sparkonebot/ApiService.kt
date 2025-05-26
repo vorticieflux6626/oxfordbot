@@ -8,6 +8,7 @@ import retrofit2.http.Headers
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import com.google.gson.annotations.SerializedName
+import android.os.Bundle
 
 interface ApiService {
     @Headers(
@@ -40,20 +41,6 @@ interface ApiService {
 data class ApiRequest(
     val query: String
 )
-
-//data class ApiRequest(
-//    // Change the structure to match OpenAI API format
-//    val model: String = "qwen3:8b",
-//    val messages: List<ApiMessage> = listOf(),
-//
-//    // Keep the 'query' field for backwards compatibility with your code
-//    val query: String = ""
-//) {
-//    constructor(query: String) : this(
-//        model = "qwen3:8b",
-//        messages = listOf(ApiMessage("user", query))
-//    )
-//}
 
 // New request class that matches the expected format
 data class ChatCompletionRequest(

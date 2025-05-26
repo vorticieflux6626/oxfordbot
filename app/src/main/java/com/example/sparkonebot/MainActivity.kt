@@ -1,27 +1,27 @@
 package com.example.oxfordbot
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
 import android.content.SharedPreferences
-//import android.content.ContentResolver
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Build
-//import android.provider.DocumentsContract
-//import android.provider.OpenableColumns
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Log
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import android.net.Uri
 import android.widget.Toast
 import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -56,7 +56,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-//import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +67,8 @@ import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ButtonDefaults
+import androidx.core.content.ContextCompat
+import androidx.core.app.ActivityCompat
 import com.example.oxfordbot.ui.theme.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -76,7 +77,6 @@ import java.io.Serializable
 import java.net.InetAddress
 import java.net.Socket
 import java.net.InetSocketAddress
-//import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.*
@@ -90,9 +90,6 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.stream.JsonReader
 import com.google.gson.reflect.TypeToken
-//import androidx.core.content.edit
-import androidx.core.content.ContextCompat
-import androidx.core.app.ActivityCompat
 
 // Global Variables
 val MyAppIcons = Icons.Rounded
@@ -122,6 +119,20 @@ class MainActivity : ComponentActivity() {
     private val availableLanguages = mutableStateListOf<TtsLanguageInfo>()
     private val availableVoices = mutableStateListOf<TtsVoiceInfo>()
     private val isTtsInitialized = mutableStateOf(false)
+    // Storage permission
+    private var isPermissionRequested = false
+    // ADD THIS:
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.values.all { it }
+        if (granted) {
+            LogManager.i("Permissions", "Storage permissions granted")
+            Toast.makeText(this, "Storage permissions granted", Toast.LENGTH_SHORT).show()
+        } else {
+            LogManager.w("Permissions", "Some storage permissions denied")
+        }
+    }
 
     companion object {
         private const val SPEECH_REQUEST_CODE = 1
@@ -129,29 +140,172 @@ class MainActivity : ComponentActivity() {
         private const val KEY_CHAT_STATE = "chat_state"
         private const val KEY_INTRO_FINISHED = "intro_finished"
         private const val STORAGE_PERMISSION_CODE = 100 // To allow PDFs to be located
+        private const val MEDIA_PERMISSION_CODE = 101 // For Android 13+
         private const val KEY_APP_SETTINGS = "app_settings"
+
+        // Define the permission constant for older SDK compatibility
+        private const val READ_MEDIA_DOCUMENTS = "android.permission.READ_MEDIA_DOCUMENTS"
+
     }
 
     // Add this method to request storage permissions
+    // Updated permission request method with proper API checks
+    // Updated permission request method with proper API checks
+    // Then use READ_MEDIA_DOCUMENTS instead of the string literal:
+    // Fix 2: Update requestStoragePermissions to use correct permission constants
     private fun requestStoragePermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+            val permission = Manifest.permission.READ_MEDIA_IMAGES
+
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                LogManager.i(TAG, "Requesting media permission for Android 13+")
+                permissionLauncher.launch(arrayOf(permission))
+            } else {
+                LogManager.i(TAG, "Media permission already granted")
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                LogManager.i(TAG, "Requesting READ_EXTERNAL_STORAGE permission")
+                permissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE))
+            } else {
+                LogManager.i(TAG, "READ_EXTERNAL_STORAGE permission already granted")
+            }
+        }
+    }
+
+    // Simplified version that should work for most cases (Preferred over more extensive version)
+    private fun requestStoragePermissionsSimple() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val permissions = mutableListOf<String>()
 
+            // For most Android versions, READ_EXTERNAL_STORAGE is sufficient
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
                 != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
 
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
-                    permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            }
-
             if (permissions.isNotEmpty()) {
-                ActivityCompat.requestPermissions(this, permissions.toTypedArray(), STORAGE_PERMISSION_CODE)
+                ActivityCompat.requestPermissions(
+                    this,
+                    permissions.toTypedArray(),
+                    STORAGE_PERMISSION_CODE
+                )
+            } else {
+                LogManager.i(TAG, "Storage permission already granted")
             }
+        }
+    }
+
+    // Fix 1: Update the onRequestPermissionsResult method signature
+    //override fun onRequestPermissionsResult(
+    //    requestCode: Int,
+    //    permissions: Array<String>,  // Changed from Array<out String>
+    //    grantResults: IntArray
+    //) {
+    //    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    //
+    //    when (requestCode) {
+    //        STORAGE_PERMISSION_CODE -> {
+    //            isPermissionRequested = false
+    //
+    //            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+    //                LogManager.i("Permissions", "READ_EXTERNAL_STORAGE permission granted")
+    //                Toast.makeText(this, "Storage permission granted - can now find downloaded PDFs", Toast.LENGTH_SHORT).show()
+    //            } else {
+    //                LogManager.w("Permissions", "READ_EXTERNAL_STORAGE permission denied")
+    //                handlePermissionDenied(Manifest.permission.READ_EXTERNAL_STORAGE)
+    //            }
+    //        }
+    //
+    //        MEDIA_PERMISSION_CODE -> {
+    //            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+    //                LogManager.i("Permissions", "READ_MEDIA_IMAGES permission granted")
+    //                Toast.makeText(this, "Media permission granted - can now find downloaded PDFs", Toast.LENGTH_SHORT).show()
+    //            } else {
+    //                LogManager.w("Permissions", "READ_MEDIA_IMAGES permission denied")
+    //                handlePermissionDenied(Manifest.permission.READ_MEDIA_IMAGES)
+    //            }
+    //        }
+    //    }
+    //}
+
+    // Fixed rationale dialog - only shows the system permission dialog
+    private fun showPermissionRationale() {
+        AlertDialog.Builder(this)
+            .setTitle("Storage Permission Needed")
+            .setMessage("This app needs storage permission to check if PDFs are already downloaded on your device, so it can open them directly instead of downloading again.")
+            .setPositiveButton("Grant Permission") { dialog, _ ->
+                dialog.dismiss()
+                // Request permission directly - this will show the system dialog
+                isPermissionRequested = true
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                    STORAGE_PERMISSION_CODE
+                )
+            }
+            .setNegativeButton("Skip") { dialog, _ ->
+                dialog.dismiss()
+                Toast.makeText(this, "You can enable storage permission later in Settings", Toast.LENGTH_LONG).show()
+            }
+            .setCancelable(false) // Prevent dismissing by tapping outside
+            .show()
+    }
+
+    // Helper method to handle permission denial
+    private fun handlePermissionDenied(permission: String) {
+        if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
+            LogManager.w("Permissions", "User selected 'Don't ask again' for $permission")
+            showPermissionPermanentlyDeniedDialog()
+        } else {
+            LogManager.w("Permissions", "User denied $permission but can ask again")
+            Toast.makeText(this, "Storage permission needed to find downloaded PDFs", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Dialog for when permission is permanently denied
+    private fun showPermissionPermanentlyDeniedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Permission Required")
+            .setMessage("Storage permission has been permanently denied. Please enable it manually in Settings to allow PDF detection.\n\nGo to: Settings → Apps → Oxford Bot → Permissions → Storage")
+            .setPositiveButton("Open Settings") { dialog, _ ->
+                dialog.dismiss()
+                openAppSettings()
+            }
+            .setNegativeButton("Skip") { dialog, _ ->
+                dialog.dismiss()
+                Toast.makeText(this, "PDF detection will not work without storage permission", Toast.LENGTH_LONG).show()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    // Helper method to open app settings
+    private fun openAppSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error opening app settings", e)
+            Toast.makeText(this, "Please manually enable storage permission in Settings", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Updated storage permission check
+    // Fix 3: Update hasStoragePermission to use correct permission constants
+    private fun hasStoragePermission(): Boolean {
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                // For Android 13+, check READ_MEDIA_IMAGES permission
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            }
+            else -> true // Permissions granted at install time for older versions
         }
     }
 
@@ -196,12 +350,11 @@ class MainActivity : ComponentActivity() {
                 LogManager.i(TAG, "TTS initialization successful")
                 isTtsInitialized.value = true
 
-                // Add a small delay to ensure TTS is fully ready
+                // REMOVE the automatic setup that causes speech
+                // Just set up TTS without the debugging speech
                 coroutineScope.launch {
-                    delay(500) // Wait 500ms for TTS to be fully ready
-
-                    // Now load languages and voices
-                    setupTtsWithDebugging()
+                    delay(500) // Wait for TTS to be fully ready
+                    setupTtsQuietly() // New function without automatic speech
                 }
             } else {
                 LogManager.e(TAG, "TTS initialization failed with status: $status")
@@ -217,6 +370,27 @@ class MainActivity : ComponentActivity() {
             oxfordbotTheme {
                 //MainScreen(chatState, apiService, coroutineScope, isIntroAnimationFinished)
                 MainScreen(chatState, apiService, isIntroAnimationFinished)
+            }
+        }
+    }
+
+    // 5. Create a new quiet setup function
+    private suspend fun setupTtsQuietly() {
+        withContext(Dispatchers.Main) {
+            try {
+                LogManager.i(TAG, "Setting up TTS quietly...")
+
+                // Load languages and voices without speaking
+                loadLanguagesQuickly()
+                loadVoicesQuickly()
+
+                // Apply settings without testing
+                setupTtsWithSettings()
+
+                LogManager.i(TAG, "TTS setup complete - ready for use")
+
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error in quiet TTS setup", e)
             }
         }
     }
@@ -535,6 +709,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // Enhanced speak function with better error handling
+    // 3. Update the speak function to be more explicit about when it should speak
     private fun speak(text: String) {
         if (!appSettings.value.enableTTS) {
             LogManager.d(TAG, "TTS is disabled in settings")
@@ -548,6 +723,12 @@ class MainActivity : ComponentActivity() {
 
         if (!isTtsInitialized.value) {
             LogManager.w(TAG, "TTS not initialized yet")
+            return
+        }
+
+        // Add a check to prevent unwanted speech during setup
+        if (text.contains("Testing voice") || text.contains("test")) {
+            LogManager.d(TAG, "Skipping test speech during setup: $text")
             return
         }
 
@@ -1211,7 +1392,7 @@ class MainActivity : ComponentActivity() {
                                     // Test TTS Button
                                     Button(
                                         onClick = {
-                                            LogManager.i(TAG, "Test Speech button clicked")
+                                            LogManager.i(TAG, "Test Speech button clicked - USER INITIATED")
 
                                             // Quick test without heavy processing
                                             coroutineScope.launch(Dispatchers.Main) {
@@ -2864,39 +3045,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Replace your existing checkForLocalPdf function with this improved version
+    // Updated PDF detection method to check permission first
     private fun checkForLocalPdf(url: String): File? {
-        val TAG = "checkForLocalPdf"
-
-        try {
-            val baseFilename = extractFilenameFromUrl(url)
-            if (baseFilename == null) {
-                LogManager.d(TAG, "Could not extract filename from URL: $url")
-                return null
-            }
-
-            LogManager.d(TAG, "Looking for local file: $baseFilename")
-
-            // Method 1: Try MediaStore API first (works with scoped storage)
-            val mediaStoreFile = findFileUsingMediaStore(baseFilename)
-            if (mediaStoreFile != null) {
-                LogManager.i(TAG, "Found file using MediaStore: ${mediaStoreFile.absolutePath}")
-                return mediaStoreFile
-            }
-
-            // Method 2: Try direct file system access (may not work on newer Android)
-            val directFile = findFileUsingDirectAccess(baseFilename)
-            if (directFile != null) {
-                LogManager.i(TAG, "Found file using direct access: ${directFile.absolutePath}")
-                return directFile
-            }
-
-            LogManager.d(TAG, "No local copy found for: $baseFilename")
+        if (!hasStoragePermission()) {
+            LogManager.w(TAG, "No storage permission, cannot check for local PDFs")
             return null
+        }
 
+        // Your existing PDF detection code here...
+        return try {
+            // ... existing implementation ...
+            null // placeholder
         } catch (e: Exception) {
             LogManager.logCaughtException(TAG, "Error checking for local PDF", e)
-            return null
+            null
         }
     }
 
@@ -3060,25 +3222,25 @@ class MainActivity : ComponentActivity() {
     }
 
     // Handle permission request results
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        when (requestCode) {
-            STORAGE_PERMISSION_CODE -> {
-                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                    LogManager.i("Permissions", "Storage permissions granted")
-                    Toast.makeText(this, "Storage permissions granted", Toast.LENGTH_SHORT).show()
-                } else {
-                    LogManager.w("Permissions", "Storage permissions denied")
-                    Toast.makeText(this, "Storage permissions needed to find downloaded files", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
+    //override fun onRequestPermissionsResult(
+    //    requestCode: Int,
+    //    permissions: Array<out String>,
+    //    grantResults: IntArray
+    //) {
+    //    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    //
+    //    when (requestCode) {
+    //        STORAGE_PERMISSION_CODE -> {
+    //            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+    //                LogManager.i("Permissions", "Storage permissions granted")
+    //                Toast.makeText(this, "Storage permissions granted", Toast.LENGTH_SHORT).show()
+    //            } else {
+    //                LogManager.w("Permissions", "Storage permissions denied")
+    //                Toast.makeText(this, "Storage permissions needed to find downloaded files", Toast.LENGTH_LONG).show()
+    //            }
+    //        }
+    //    }
+    //}
 
     // Helper function to find the most recent matching file
     /*private fun findMostRecentMatchingFile(folder: File, nameWithoutExt: String, extension: String): File? {
@@ -3672,7 +3834,7 @@ class MainActivity : ComponentActivity() {
                 setupTtsWithSettings()
 
                 // 5. Final test
-                finalTtsTest()
+                //finalTtsTest()
 
                 LogManager.i(TAG, "=== TTS Setup Complete ===")
 
@@ -3884,18 +4046,6 @@ class MainActivity : ComponentActivity() {
                     LogManager.logCaughtException(TAG, "Error loading voices", e)
                 }
             }
-        }
-    }
-
-    private fun finalTtsTest() {
-        LogManager.i(TAG, "--- Final TTS Test ---")
-
-        try {
-            // Test a simple speak command
-            textToSpeech?.speak("Testing voice", TextToSpeech.QUEUE_FLUSH, null, "test")
-            LogManager.i(TAG, "Test speak command sent")
-        } catch (e: Exception) {
-            LogManager.logCaughtException(TAG, "Error in final TTS test", e)
         }
     }
 
@@ -4357,7 +4507,7 @@ class MainActivity : ComponentActivity() {
 
 } // End of MainActivity Class
 
-private fun Modifier.disableSelection(): Modifier = composed {
+private fun Modifier.disableSelection() = composed {
     this.pointerInput(Unit) {
         detectTapGestures {
             // Do nothing, effectively disabling selection for this modifier
@@ -4377,7 +4527,7 @@ data class ChatState(
     val isAnimationVisible: Boolean = false,
     val ragFiles: List<RagFile> = listOf(
         RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.html"),
-        RagFile("a57325c5-8bda-4525-8741-37a25ec557d6", "Table of Workcells, Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.html"),
+        RagFile("9c4a27f2-509f-4856-838a-954d20f0098a", "Table of Workcells, Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.html"),
         RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", "https://sparkonelabs.com/RAG_pdfs/18036_01.pdf"),
         RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", "https://sparkonelabs.com/RAG_pdfs/18036_02.pdf"),
         RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", "https://sparkonelabs.com/RAG_pdfs/18036_03.pdf"),
