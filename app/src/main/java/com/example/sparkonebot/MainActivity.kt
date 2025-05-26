@@ -5,14 +5,14 @@ import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
 import android.content.SharedPreferences
-import android.content.ContentResolver
+//import android.content.ContentResolver
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.os.Bundle
 import android.os.Environment
 import android.os.Build
-import android.provider.DocumentsContract
-import android.provider.OpenableColumns
+//import android.provider.DocumentsContract
+//import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.util.Log
 import android.speech.RecognizerIntent
@@ -56,7 +56,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
+//import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -76,7 +76,7 @@ import java.io.Serializable
 import java.net.InetAddress
 import java.net.Socket
 import java.net.InetSocketAddress
-import java.net.ConnectException
+//import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.*
@@ -90,7 +90,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.stream.JsonReader
 import com.google.gson.reflect.TypeToken
-import androidx.core.content.edit
+//import androidx.core.content.edit
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 
@@ -99,7 +99,6 @@ val MyAppIcons = Icons.Rounded
 val hostReachable = mutableStateOf(false)
 // This is the router address when the Local Development Network is accessed remotely
 const val SparkOneBrain: String = "24.26.41.112"
-//const val SparkOneBrainLocal: String = "192.168.254.131"
 
 class MainActivity : ComponentActivity() {
     private val TAG = "MainActivity"
@@ -109,7 +108,6 @@ class MainActivity : ComponentActivity() {
     private var textToSpeech: TextToSpeech? = null
     private val isIntroAnimationFinished = mutableStateOf(false)
     private lateinit var sharedPreferences: SharedPreferences
-    //private val gson = Gson()
     private val gson = GsonBuilder()
         .serializeNulls() // Include null fields
         .create()
@@ -174,7 +172,6 @@ class MainActivity : ComponentActivity() {
             LogManager.i(TAG, "App started - version: unknown")
         }
 
-        // Test line to clear old JSON serial data
         // Initialize SharedPreferences (Keep state after home/standby)
         sharedPreferences = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
@@ -337,8 +334,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // You can override or modify the old state saving methods
-    // Override for future compatibility with onSaveInstanceState
-    // Keep the original Bundle-based state saving
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
 
@@ -409,7 +404,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         textToSpeech?.stop()
         textToSpeech?.shutdown()
-
+        coroutineScope.cancel()  // Don't forget to cancel the scope when activity is destroyed
     }
 
     private val lenientGson: Gson by lazy {
@@ -417,7 +412,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // Here's the fully updated handleApiResponse method that processes all response paths
-
     private fun handleApiResponse(response: ApiResponse) {
         try {
             LogManager.d(TAG, "Raw API response: ${response.response}")
@@ -427,16 +421,8 @@ class MainActivity : ComponentActivity() {
                 if (response.choices != null && response.choices.isNotEmpty() && response.choices[0].message?.content != null) {
                     var messageContent = response.choices[0].message!!.content!!
 
-                    // Extract only the part after </think> if it exists
-                    //if (messageContent.contains("</think>")) {
-                    //    val parts = messageContent.split("</think>", limit = 2)
-                    //    if (parts.size > 1) {
-                    //        messageContent = parts[1].trim()
-                    //    }
-                    //}
-
                     // Show thinking if toggled
-                    val processedContent = processThinkingContent(messageContent)
+                    //val processedContent = processThinkingContent(messageContent)
 
 
                     if (messageContent.isNotEmpty()) {
@@ -481,7 +467,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Extract only the part after </think> if it exists
-                val processedContent = processThinkingContent(messageContent)
+                //val processedContent = processThinkingContent(messageContent)
 
                 LogManager.d(TAG, "Full processed message content: $messageContent")
 
@@ -711,7 +697,6 @@ class MainActivity : ComponentActivity() {
     fun MainScreen(
         chatState: MutableState<ChatState>,
         apiService: ApiService,
-        //coroutineScope: CoroutineScope,
         isIntroAnimationFinished: MutableState<Boolean>
     ) {
         val backgroundColor = if (isIntroAnimationFinished.value) Navy else Color.Black
@@ -827,7 +812,8 @@ class MainActivity : ComponentActivity() {
                         }
 
                         showSettingsScreen.value -> {
-                            SettingsScreen(
+                            // Use the non-blocking version instead of the heavy blocking version
+                            SettingsScreenWithLazyLoading(
                                 settings = appSettings.value,
                                 onSettingsChange = { newSettings ->
                                     val oldModel = appSettings.value.selectedModel
@@ -846,6 +832,7 @@ class MainActivity : ComponentActivity() {
                                 onClose = { showSettingsScreen.value = false }
                             )
                         }
+
                         showNetworkDetailsScreen.value -> {
                             NetworkDetailsScreen(
                                 host = SparkOneBrain,
@@ -960,14 +947,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Settings Screen Composable
+    // Complete Settings Screen Composable with Lazy Loading
     @Composable
-    fun SettingsScreen(
+    fun SettingsScreenWithLazyLoading(
         settings: AppSettings,
         onSettingsChange: (AppSettings) -> Unit,
         onClose: () -> Unit
     ) {
         val scrollState = rememberLazyListState()
+        var isLoadingTtsData by remember { mutableStateOf(true) }
+        var ttsLoadingMessage by remember { mutableStateOf("Loading TTS data...") }
+
+        // Non-blocking TTS data loading
+        LaunchedEffect(Unit) {
+            launch(Dispatchers.IO) {
+                try {
+                    withContext(Dispatchers.Main) {
+                        ttsLoadingMessage = "Loading languages..."
+                    }
+
+                    delay(50) // Let UI update
+
+                    withContext(Dispatchers.Main) {
+                        loadLanguagesQuickly()
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        ttsLoadingMessage = "Loading voices..."
+                    }
+
+                    delay(50) // Let UI update
+
+                    withContext(Dispatchers.Main) {
+                        loadVoicesQuickly()
+                    }
+
+                    delay(100) // Small final delay
+
+                    withContext(Dispatchers.Main) {
+                        isLoadingTtsData = false
+                    }
+
+                } catch (e: Exception) {
+                    LogManager.logCaughtException(TAG, "Error in lazy TTS loading", e)
+                    withContext(Dispatchers.Main) {
+                        isLoadingTtsData = false
+                    }
+                }
+            }
+        }
 
         Column(
             modifier = Modifier
@@ -1054,116 +1082,179 @@ class MainActivity : ComponentActivity() {
                             if (settings.enableTTS) {
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Speech Rate
-                                SliderSettingCard(
-                                    title = "Speech Rate",
-                                    description = "How fast the speech is (0.5 = slow, 2.0 = fast)",
-                                    value = settings.ttsSpeechRate,
-                                    range = 0.5f..2.0f,
-                                    steps = 29, // 0.05 increments
-                                    onValueChanged = { rate ->
-                                        onSettingsChange(settings.copy(ttsSpeechRate = rate))
-                                        // Apply immediately for preview
-                                        textToSpeech?.setSpeechRate(rate)
+                                if (isLoadingTtsData) {
+                                    // Show loading indicator
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        backgroundColor = Color.Black.copy(alpha = 0.3f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(24.dp),
+                                                color = Gold,
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(
+                                                text = ttsLoadingMessage,
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.body2
+                                            )
+                                        }
                                     }
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Pitch
-                                SliderSettingCard(
-                                    title = "Pitch",
-                                    description = "Voice tone (0.5 = low, 2.0 = high)",
-                                    value = settings.ttsPitch,
-                                    range = 0.5f..2.0f,
-                                    steps = 29, // 0.05 increments
-                                    onValueChanged = { pitch ->
-                                        onSettingsChange(settings.copy(ttsPitch = pitch))
-                                        // Apply immediately for preview
-                                        textToSpeech?.setPitch(pitch)
-                                    }
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Volume
-                                SliderSettingCard(
-                                    title = "TTS Volume",
-                                    description = "Speech volume (0.0 = silent, 1.0 = max)",
-                                    value = settings.ttsVolume,
-                                    range = 0.0f..1.0f,
-                                    steps = 19, // 0.05 increments
-                                    onValueChanged = { volume ->
-                                        onSettingsChange(settings.copy(ttsVolume = volume))
-                                    }
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Language Selection
-                                if (availableLanguages.isNotEmpty()) {
-                                    DropdownSettingCard(
-                                        title = "Language",
-                                        description = "Select TTS language",
-                                        selectedValue = settings.ttsLanguage,
-                                        options = availableLanguages.map {
-                                            formatLocaleString(it.locale) to it.displayName
-                                        },
-                                        onSelectionChanged = { localeString ->
-                                            onSettingsChange(settings.copy(ttsLanguage = localeString))
-                                            // Apply immediately
-                                            val locale = parseLocaleString(localeString)
-                                            textToSpeech?.setLanguage(locale)
-                                            // Reload voices for new language
-                                            loadAvailableVoices()
+                                } else {
+                                    // Speech Rate
+                                    SliderSettingCard(
+                                        title = "Speech Rate",
+                                        description = "How fast the speech is (0.5 = slow, 2.0 = fast)",
+                                        value = settings.ttsSpeechRate,
+                                        range = 0.5f..2.0f,
+                                        steps = 29, // 0.05 increments
+                                        onValueChanged = { rate ->
+                                            onSettingsChange(settings.copy(ttsSpeechRate = rate))
+                                            // Apply immediately for preview
+                                            textToSpeech?.setSpeechRate(rate)
                                         }
                                     )
 
                                     Spacer(modifier = Modifier.height(8.dp))
-                                }
 
-                                // Voice Selection (API 21+)
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && availableVoices.isNotEmpty()) {
-                                    DropdownSettingCard(
-                                        title = "Voice",
-                                        description = "Select specific voice (optional)",
-                                        selectedValue = settings.ttsVoice,
-                                        options = listOf("" to "Default Voice") + availableVoices.map {
-                                            it.name to it.displayName
-                                        },
-                                        onSelectionChanged = { voiceName ->
-                                            onSettingsChange(settings.copy(ttsVoice = voiceName))
-                                            // Apply immediately
-                                            if (voiceName.isNotEmpty()) {
-                                                val voice = textToSpeech?.voices?.find { it.name == voiceName }
-                                                voice?.let { textToSpeech?.setVoice(it) }
+                                    // Pitch
+                                    SliderSettingCard(
+                                        title = "Pitch",
+                                        description = "Voice tone (0.5 = low, 2.0 = high)",
+                                        value = settings.ttsPitch,
+                                        range = 0.5f..2.0f,
+                                        steps = 29, // 0.05 increments
+                                        onValueChanged = { pitch ->
+                                            onSettingsChange(settings.copy(ttsPitch = pitch))
+                                            // Apply immediately for preview
+                                            textToSpeech?.setPitch(pitch)
+                                        }
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Volume
+                                    SliderSettingCard(
+                                        title = "TTS Volume",
+                                        description = "Speech volume (0.0 = silent, 1.0 = max)",
+                                        value = settings.ttsVolume,
+                                        range = 0.0f..1.0f,
+                                        steps = 19, // 0.05 increments
+                                        onValueChanged = { volume ->
+                                            onSettingsChange(settings.copy(ttsVolume = volume))
+                                        }
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Language Selection
+                                    if (availableLanguages.isNotEmpty()) {
+                                        DropdownSettingCard(
+                                            title = "Language",
+                                            description = "Select TTS language",
+                                            selectedValue = settings.ttsLanguage,
+                                            options = availableLanguages.map {
+                                                formatLocaleString(it.locale) to it.displayName
+                                            },
+                                            onSelectionChanged = { localeString ->
+                                                onSettingsChange(settings.copy(ttsLanguage = localeString))
+                                                // Apply immediately
+                                                val locale = parseLocaleString(localeString)
+                                                textToSpeech?.setLanguage(locale)
+                                                // Reload voices for new language (non-blocking)
+                                                coroutineScope.launch(Dispatchers.IO) {
+                                                    withContext(Dispatchers.Main) {
+                                                        loadVoicesQuickly()
+                                                    }
+                                                }
                                             }
+                                        )
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
+
+                                    // Voice Selection (API 21+)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                        val voiceOptions = if (availableVoices.isNotEmpty()) {
+                                            listOf("" to "Default Voice") + availableVoices.map {
+                                                it.name to it.displayName
+                                            }
+                                        } else {
+                                            listOf("" to "Default Voice")
                                         }
-                                    )
 
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
+                                        DropdownSettingCard(
+                                            title = "Voice",
+                                            description = if (availableVoices.isEmpty())
+                                                "Loading voices..."
+                                            else
+                                                "Select specific voice (optional)",
+                                            selectedValue = settings.ttsVoice,
+                                            options = voiceOptions,
+                                            onSelectionChanged = { voiceName ->
+                                                onSettingsChange(settings.copy(ttsVoice = voiceName))
+                                                // Apply voice in background to avoid UI freeze
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    applyVoiceSettingsQuickly(voiceName)
+                                                }
+                                            }
+                                        )
 
-                                // Test TTS Button
-                                Button(
-                                    onClick = {
-                                        speak("This is a test of the text to speech settings.")
-                                    },
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Test Speech", color = Color.White)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
+
+                                    // Test TTS Button
+                                    Button(
+                                        onClick = {
+                                            LogManager.i(TAG, "Test Speech button clicked")
+
+                                            // Quick test without heavy processing
+                                            coroutineScope.launch(Dispatchers.Main) {
+                                                try {
+                                                    // Stop any current speech
+                                                    textToSpeech?.stop()
+
+                                                    // Apply current settings quickly
+                                                    textToSpeech?.let { tts ->
+                                                        tts.setSpeechRate(settings.ttsSpeechRate)
+                                                        tts.setPitch(settings.ttsPitch)
+
+                                                        val locale = parseLocaleString(settings.ttsLanguage)
+                                                        tts.setLanguage(locale)
+
+                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && settings.ttsVoice.isNotEmpty()) {
+                                                            val voice = tts.voices?.find { it.name == settings.ttsVoice }
+                                                            voice?.let { tts.setVoice(it) }
+                                                        }
+                                                    }
+
+                                                    // Test speak with immediate playback
+                                                    val testText = "This is a test of the selected voice settings."
+                                                    textToSpeech?.speak(
+                                                        testText,
+                                                        TextToSpeech.QUEUE_FLUSH,
+                                                        null,
+                                                        "voice_test_${System.currentTimeMillis()}"
+                                                    )
+
+                                                    LogManager.i(TAG, "Test speech initiated")
+                                                } catch (e: Exception) {
+                                                    LogManager.logCaughtException(TAG, "Error in test speech", e)
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Test Speech", color = Color.White)
+                                    }
                                 }
                             }
-
-                            //SwitchSettingCard(
-                            //    title = "Text-to-Speech",
-                            //    description = "Enable voice output for AI responses",
-                            //    isEnabled = settings.enableTTS,
-                            //    onToggle = { enabled ->
-                            //        onSettingsChange(settings.copy(enableTTS = enabled))
-                            //   }
-                            //)
 
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1175,6 +1266,41 @@ class MainActivity : ComponentActivity() {
                                     onSettingsChange(settings.copy(autoSaveChat = enabled))
                                 }
                             )
+
+                            // Add this section right after the Auto-save Chat toggle in your SettingsScreenWithLazyLoading composable
+// Find the SwitchSettingCard for "Auto-save Chat" and add this code right after it:
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+// Clear Chat History Button
+                            Button(
+                                onClick = {
+                                    // Clear the chat messages
+                                    chatState.value = chatState.value.copy(messages = emptyList())
+
+                                    // Log the action
+                                    LogManager.i(TAG, "Chat history cleared by user from settings")
+
+                                    // Show confirmation toast
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Chat history cleared",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Clear Chat History", color = Color.White)
+                            }
+
+                            Text(
+                                text = "This will permanently delete all chat messages",
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.caption,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+
                         }
                     }
                 }
@@ -1214,26 +1340,36 @@ class MainActivity : ComponentActivity() {
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                Button(
-                                    onClick = {
-                                        // Reload voices
-                                        coroutineScope.launch {
-                                            setupTtsWithDebugging()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("Reload TTS", color = Color.White)
-                                }
+                                    Button(
+                                        onClick = {
+                                            // Reload voices non-blocking
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                withContext(Dispatchers.Main) {
+                                                    loadLanguagesQuickly()
+                                                    loadVoicesQuickly()
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Reload TTS", color = Color.White)
+                                    }
 
-                                Button(
-                                    onClick = {
-                                        // Add simple fallback voices
-                                        loadVoicesSimple()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-                                ) {
-                                    Text("Add Default Voice", color = Color.White)
+                                    Button(
+                                        onClick = {
+                                            // Add simple fallback voices
+                                            loadVoicesSimple()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Add Default Voice", color = Color.White)
+                                    }
                                 }
                             }
                         }
@@ -2468,13 +2604,20 @@ class MainActivity : ComponentActivity() {
                     OutlinedButton(
                         onClick = { expanded = true },
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
+                            backgroundColor = Color.Blue,
+                            contentColor = Gold
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        // Fix: Handle empty options list
+                        val displayText = when {
+                            options.isEmpty() -> "No options available"
+                            selectedValue.isEmpty() -> "Select ${title.lowercase()}"
+                            else -> options.find { it.first == selectedValue }?.second ?: "Default Voice"
+                        }
+
                         Text(
-                            text = options.find { it.first == selectedValue }?.second
-                                ?: "Select ${title.lowercase()}",
+                            text = displayText,
                             modifier = Modifier.weight(1f),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Start
                         )
@@ -2484,14 +2627,19 @@ class MainActivity : ComponentActivity() {
                     DropdownMenu(
                         expanded = expanded,
                         onDismissRequest = { expanded = false },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Navy) // Set background to Navy blue
                     ) {
                         options.forEach { (value, displayName) ->
                             DropdownMenuItem(
                                 onClick = {
                                     onSelectionChanged(value)
                                     expanded = false
-                                }
+                                },
+                                modifier = Modifier.background(
+                                    if (value == selectedValue) LightBlue.copy(alpha = 0.3f) else Color.Transparent
+                                )
                             ) {
                                 Text(
                                     text = displayName,
@@ -2502,13 +2650,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (selectedValue.isNotEmpty()) {
-                    Text(
-                        text = "Selected: ${options.find { it.first == selectedValue }?.second}",
-                        color = Gold,
-                        style = MaterialTheme.typography.caption,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+                // Fix: Show selected value only if we have options
+                if (selectedValue.isNotEmpty() && options.isNotEmpty()) {
+                    val selectedDisplay = options.find { it.first == selectedValue }?.second
+                    if (selectedDisplay != null) {
+                        Text(
+                            text = "Selected: $selectedDisplay",
+                            color = Gold,
+                            style = MaterialTheme.typography.caption,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -2929,7 +3081,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // Helper function to find the most recent matching file
-    private fun findMostRecentMatchingFile(folder: File, nameWithoutExt: String, extension: String): File? {
+    /*private fun findMostRecentMatchingFile(folder: File, nameWithoutExt: String, extension: String): File? {
         val TAG = "findMostRecentMatchingFile"
 
         try {
@@ -2973,7 +3125,7 @@ class MainActivity : ComponentActivity() {
             LogManager.logCaughtException(TAG, "Error finding most recent matching file", e)
             return null
         }
-    }
+    }*/
 
     // Helper function to extract filename from URL
     private fun extractFilenameFromUrl(url: String): String? {
@@ -3069,7 +3221,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // Also update the showFileFoundToast function to show which variant was found
-    private fun showFileFoundToast(context: Context, file: File) {
+    /*private fun showFileFoundToast(context: Context, file: File) {
         val sizeKB = file.length() / 1024
         val fileName = file.name
 
@@ -3081,9 +3233,9 @@ class MainActivity : ComponentActivity() {
 
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         LogManager.i("showFileFoundToast", "Showing toast for file: $fileName")
-    }
+    }*/
 
-    private fun tryFallbackUrlOpen(context: Context, uri: Uri) {
+    /*private fun tryFallbackUrlOpen(context: Context, uri: Uri) {
         val TAG = "tryFallbackUrlOpen"
 
         try {
@@ -3118,10 +3270,10 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
         }
-    }
+    }*/
 
     // 5. Improve the getMimeType function:
-    private fun getMimeType(url: String): String? {
+    /*private fun getMimeType(url: String): String? {
         return try {
             when {
                 url.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
@@ -3135,7 +3287,7 @@ class MainActivity : ComponentActivity() {
             LogManager.logCaughtException("getMimeType", "Error determining MIME type for: $url", e)
             null
         }
-    }
+    }*/
 
     // Now, create a RAG Data screen component
     @Composable
@@ -3377,7 +3529,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // Update your API request to use the selected model
-    private fun createChatCompletionRequest(prompt: String, selectedFiles: List<FileReference>): ChatCompletionRequest {
+    /*private fun createChatCompletionRequest(prompt: String, selectedFiles: List<FileReference>): ChatCompletionRequest {
         val apiMessage = ApiMessage("user", prompt)
 
         return ChatCompletionRequest(
@@ -3386,7 +3538,7 @@ class MainActivity : ComponentActivity() {
             chat_id = "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec",
             files = selectedFiles
         )
-    }
+    }*/
 
     private fun processThinkingContent(content: String): String {
         return if (appSettings.value.showThinking) {
@@ -3628,96 +3780,109 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadAndDebugVoices() {
-        availableVoices.clear()
+        coroutineScope.launch(Dispatchers.Main) {
+            LogManager.i(TAG, "--- Loading Voices ---")
 
-        LogManager.i(TAG, "--- Loading Voices ---")
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                LogManager.i(TAG, "Voice selection not available on Android < 5.0")
+                return@launch  // Fix: Use return@launch instead of return
+            }
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            LogManager.i(TAG, "Voice selection not available on Android < 5.0")
-            return
-        }
+            textToSpeech?.let { tts ->
+                try {
+                    val allVoices = tts.voices
+                    LogManager.i(TAG, "Total voices from getVoices(): ${allVoices?.size ?: 0}")
 
-        textToSpeech?.let { tts ->
-            try {
-                val allVoices = tts.voices
-                LogManager.i(TAG, "Total voices from getVoices(): ${allVoices?.size ?: 0}")
-
-                if (allVoices == null) {
-                    LogManager.w(TAG, "getVoices() returned null!")
-                    return
-                }
-
-                if (allVoices.isEmpty()) {
-                    LogManager.w(TAG, "No voices available from TTS engine!")
-                    return
-                }
-
-                // Log ALL voices first for debugging
-                LogManager.i(TAG, "=== ALL AVAILABLE VOICES ===")
-                allVoices.forEachIndexed { index, voice ->
-                    LogManager.i(TAG, "Voice $index: ${voice.name}")
-                    LogManager.i(TAG, "  Locale: ${voice.locale} (${voice.locale.displayName})")
-                    LogManager.i(TAG, "  Language: ${voice.locale.language}")
-                    LogManager.i(TAG, "  Country: ${voice.locale.country}")
-                    LogManager.i(TAG, "  Quality: ${voice.quality}")
-                    LogManager.i(TAG, "  Network required: ${voice.isNetworkConnectionRequired}")
-                    LogManager.i(TAG, "  Features: ${voice.features}")
-                }
-
-                // Now filter for English voices
-                LogManager.i(TAG, "=== FILTERING FOR ENGLISH VOICES ===")
-                var englishCount = 0
-
-                allVoices.forEach { voice ->
-                    LogManager.d(TAG, "Checking voice: ${voice.name}, language: '${voice.locale.language}'")
-
-                    if (voice.locale.language.equals("en", ignoreCase = true)) {
-                        englishCount++
-                        LogManager.i(TAG, "Found English voice: ${voice.name}")
-
-                        val qualityText = when (voice.quality) {
-                            android.speech.tts.Voice.QUALITY_VERY_HIGH -> "Very High"
-                            android.speech.tts.Voice.QUALITY_HIGH -> "High"
-                            android.speech.tts.Voice.QUALITY_NORMAL -> "Normal"
-                            android.speech.tts.Voice.QUALITY_LOW -> "Low"
-                            android.speech.tts.Voice.QUALITY_VERY_LOW -> "Very Low"
-                            else -> "Unknown (${voice.quality})"
-                        }
-
-                        val networkText = if (voice.isNetworkConnectionRequired) " (Network)" else " (Local)"
-
-                        availableVoices.add(
-                            TtsVoiceInfo(
-                                name = voice.name,
-                                displayName = "${voice.locale.displayName} - ${voice.name.split("#").lastOrNull() ?: voice.name} - $qualityText$networkText",
-                                locale = voice.locale,
-                                quality = voice.quality,
-                                isNetworkConnectionRequired = voice.isNetworkConnectionRequired
-                            )
-                        )
+                    if (allVoices == null) {
+                        LogManager.w(TAG, "getVoices() returned null!")
+                        return@launch  // Fix: Use return@launch
                     }
+
+                    if (allVoices.isEmpty()) {
+                        LogManager.w(TAG, "No voices available from TTS engine!")
+                        return@launch  // Fix: Use return@launch
+                    }
+
+                    // Create a new list to collect voices
+                    val newVoices = mutableListOf<TtsVoiceInfo>()
+
+                    // Log ALL voices first for debugging
+                    LogManager.i(TAG, "=== ALL AVAILABLE VOICES ===")
+                    allVoices.forEachIndexed { index, voice ->
+                        LogManager.i(TAG, "Voice $index: ${voice.name}")
+                        LogManager.i(TAG, "  Locale: ${voice.locale} (${voice.locale.displayName})")
+                        LogManager.i(TAG, "  Language: ${voice.locale.language}")
+                        LogManager.i(TAG, "  Country: ${voice.locale.country}")
+                        LogManager.i(TAG, "  Quality: ${voice.quality}")
+                        LogManager.i(TAG, "  Network required: ${voice.isNetworkConnectionRequired}")
+                        LogManager.i(TAG, "  Features: ${voice.features}")
+                    }
+
+                    // Now filter for English voices
+                    LogManager.i(TAG, "=== FILTERING FOR ENGLISH VOICES ===")
+                    var englishCount = 0
+
+                    allVoices.forEach { voice ->
+                        LogManager.d(TAG, "Checking voice: ${voice.name}, language: '${voice.locale.language}'")
+
+                        if (voice.locale.language.equals("en", ignoreCase = true)) {
+                            englishCount++
+                            LogManager.i(TAG, "Found English voice: ${voice.name}")
+
+                            val qualityText = when (voice.quality) {
+                                android.speech.tts.Voice.QUALITY_VERY_HIGH -> "Very High"
+                                android.speech.tts.Voice.QUALITY_HIGH -> "High"
+                                android.speech.tts.Voice.QUALITY_NORMAL -> "Normal"
+                                android.speech.tts.Voice.QUALITY_LOW -> "Low"
+                                android.speech.tts.Voice.QUALITY_VERY_LOW -> "Very Low"
+                                else -> "Unknown (${voice.quality})"
+                            }
+
+                            val networkText = if (voice.isNetworkConnectionRequired) " (Network)" else " (Local)"
+
+                            // Fix: Add to newVoices instead of availableVoices
+                            newVoices.add(
+                                TtsVoiceInfo(
+                                    name = voice.name,
+                                    displayName = "${voice.locale.displayName} - ${
+                                        voice.name.split("#").lastOrNull() ?: voice.name
+                                    } - $qualityText$networkText",
+                                    locale = voice.locale,
+                                    quality = voice.quality,
+                                    isNetworkConnectionRequired = voice.isNetworkConnectionRequired
+                                )
+                            )
+                        }
+                    }
+
+                    LogManager.i(TAG, "Found $englishCount English voices out of ${allVoices.size} total voices")
+
+                    if (englishCount == 0) {
+                        LogManager.w(TAG, "NO ENGLISH VOICES FOUND!")
+                        LogManager.w(TAG, "User may need to:")
+                        LogManager.w(TAG, "1. Install English TTS data")
+                        LogManager.w(TAG, "2. Check TTS settings")
+                        LogManager.w(TAG, "3. Install Google TTS or other TTS engine")
+                    }
+
+                    // Sort voices
+                    newVoices.sortBy { it.displayName }
+
+                    // Update the state list on the main thread
+                    withContext(Dispatchers.Main) {
+                        availableVoices.clear()
+                        availableVoices.addAll(newVoices)
+                        LogManager.i(TAG, "Updated available voices: ${availableVoices.size}")
+
+                        // Log the final list
+                        availableVoices.forEach { voice ->
+                            LogManager.i(TAG, "English voice available: ${voice.displayName}")
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    LogManager.logCaughtException(TAG, "Error loading voices", e)
                 }
-
-                LogManager.i(TAG, "Found $englishCount English voices out of ${allVoices.size} total voices")
-
-                if (englishCount == 0) {
-                    LogManager.w(TAG, "NO ENGLISH VOICES FOUND!")
-                    LogManager.w(TAG, "User may need to:")
-                    LogManager.w(TAG, "1. Install English TTS data")
-                    LogManager.w(TAG, "2. Check TTS settings")
-                    LogManager.w(TAG, "3. Install Google TTS or other TTS engine")
-                }
-
-                // Sort voices
-                availableVoices.sortBy { it.displayName }
-
-                LogManager.i(TAG, "Final English voices list:")
-                availableVoices.forEach { voice ->
-                    LogManager.i(TAG, "English voice: ${voice.displayName}")
-                }
-
-            } catch (e: Exception) {
-                LogManager.logCaughtException(TAG, "Error loading voices", e)
             }
         }
     }
@@ -3762,7 +3927,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // Improved language loading
-    private fun loadAvailableLanguages() {
+    /*private fun loadAvailableLanguages() {
         availableLanguages.clear()
 
         textToSpeech?.let { tts ->
@@ -3824,7 +3989,7 @@ class MainActivity : ComponentActivity() {
                 LogManager.logCaughtException(TAG, "Error loading TTS languages", e)
             }
         }
-    }
+    }*/
 
     // Improved voice loading - filter for English voices
     private fun loadAvailableVoices() {
@@ -3891,6 +4056,86 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Add this improved voice loading with better filtering
+    private fun loadAvailableVoicesImproved() {
+        availableVoices.clear()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            textToSpeech?.let { tts ->
+                try {
+                    LogManager.i(TAG, "Loading available voices (improved)...")
+
+                    val allVoices = tts.voices
+                    LogManager.i(TAG, "Total voices available: ${allVoices?.size ?: 0}")
+
+                    if (allVoices == null || allVoices.isEmpty()) {
+                        LogManager.w(TAG, "No voices available from TTS engine")
+                        return
+                    }
+
+                    // Get current language setting to prioritize matching voices
+                    val currentLanguage = parseLocaleString(appSettings.value.ttsLanguage)
+                    LogManager.i(TAG, "Current language setting: $currentLanguage")
+
+                    allVoices.filter { voice ->
+                        // Filter for English voices
+                        voice.locale.language.equals("en", ignoreCase = true)
+                    }.sortedWith(compareBy<android.speech.tts.Voice> { voice ->
+                        // Sort: matching language/country first, then by quality (higher first), then by name
+                        when {
+                            voice.locale == currentLanguage -> 0
+                            voice.locale.language == currentLanguage.language -> 1
+                            else -> 2
+                        }
+                    }.thenBy { -it.quality }.thenBy { it.name }).forEach { voice ->
+
+                        val qualityText = when (voice.quality) {
+                            android.speech.tts.Voice.QUALITY_VERY_HIGH -> "★★★★★"
+                            android.speech.tts.Voice.QUALITY_HIGH -> "★★★★"
+                            android.speech.tts.Voice.QUALITY_NORMAL -> "★★★"
+                            android.speech.tts.Voice.QUALITY_LOW -> "★★"
+                            android.speech.tts.Voice.QUALITY_VERY_LOW -> "★"
+                            else -> "?"
+                        }
+
+                        val networkText = if (voice.isNetworkConnectionRequired) " 🌐" else " 📱"
+                        val matchText = if (voice.locale == currentLanguage) " ✓" else ""
+
+                        // Create a more readable display name
+                        val voiceName = voice.name.split("#").lastOrNull()?.let {
+                            it.replace("_", " ").replace("-", " ")
+                        } ?: voice.name
+
+                        availableVoices.add(
+                            TtsVoiceInfo(
+                                name = voice.name,
+                                displayName = "${voice.locale.displayName}$matchText - $voiceName $qualityText$networkText",
+                                locale = voice.locale,
+                                quality = voice.quality,
+                                isNetworkConnectionRequired = voice.isNetworkConnectionRequired
+                            )
+                        )
+
+                        LogManager.d(TAG, "Added voice: ${voice.name} (${voice.locale}) Quality: ${voice.quality}")
+                    }
+
+                    LogManager.i(TAG, "Loaded ${availableVoices.size} English voices")
+
+                    if (availableVoices.isEmpty()) {
+                        LogManager.w(TAG, "No English voices found!")
+                        // Log all available voices for debugging
+                        allVoices.take(10).forEach { voice ->
+                            LogManager.w(TAG, "Available voice: ${voice.name} (${voice.locale.language}-${voice.locale.country})")
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    LogManager.logCaughtException(TAG, "Error loading voices (improved)", e)
+                }
+            }
+        }
+    }
+
     private fun parseLocaleString(localeString: String): Locale {
         val parts = localeString.split("-", "_")
         return when (parts.size) {
@@ -3936,7 +4181,181 @@ class MainActivity : ComponentActivity() {
         LogManager.i(TAG, "Consider showing dialog to install TTS data")
     }
 
-}
+    // Also add a function to force reload voices when settings screen is opened:
+    // In MainActivity, add this to be called when settings screen opens:
+    private fun refreshTtsData() {
+        coroutineScope.launch {
+            if (isTtsInitialized.value) {
+                LogManager.i(TAG, "Refreshing TTS data for settings")
+                loadAndDebugLanguages()
+                loadAndDebugVoices()
+            }
+        }
+    }
+
+    // Add this function to help debug voice selection
+    private fun debugCurrentTtsSettings() {
+        textToSpeech?.let { tts ->
+            try {
+                LogManager.i(TAG, "=== Current TTS Settings Debug ===")
+
+                // Current language
+                val currentLanguage = tts.language
+                LogManager.i(TAG, "Current TTS Language: $currentLanguage")
+
+                // Current voice (API 21+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val currentVoice = tts.voice
+                    if (currentVoice != null) {
+                        LogManager.i(TAG, "Current TTS Voice: ${currentVoice.name}")
+                        LogManager.i(TAG, "Voice Locale: ${currentVoice.locale}")
+                        LogManager.i(TAG, "Voice Quality: ${currentVoice.quality}")
+                    } else {
+                        LogManager.w(TAG, "Current TTS Voice: null")
+                    }
+                }
+
+                // Settings from app
+                val settings = appSettings.value
+                LogManager.i(TAG, "App Settings - Language: ${settings.ttsLanguage}")
+                LogManager.i(TAG, "App Settings - Voice: '${settings.ttsVoice}'")
+                LogManager.i(TAG, "App Settings - Speech Rate: ${settings.ttsSpeechRate}")
+                LogManager.i(TAG, "App Settings - Pitch: ${settings.ttsPitch}")
+
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error in TTS debug", e)
+            }
+        }
+    }
+
+    // Fix 1: Make TTS data loading non-blocking
+    private fun refreshTtsDataNonBlocking() {
+        coroutineScope.launch(Dispatchers.IO) { // Use IO dispatcher for heavy work
+            try {
+                LogManager.i(TAG, "Starting non-blocking TTS data refresh...")
+
+                if (!isTtsInitialized.value) {
+                    LogManager.w(TAG, "TTS not initialized, skipping refresh")
+                    return@launch
+                }
+
+                // Load languages in background
+                withContext(Dispatchers.Main) {
+                    loadLanguagesQuickly()
+                }
+
+                // Small delay to let UI update
+                delay(100)
+
+                // Load voices in background
+                withContext(Dispatchers.Main) {
+                    loadVoicesQuickly()
+                }
+
+                LogManager.i(TAG, "TTS data refresh completed")
+
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error in non-blocking TTS refresh", e)
+            }
+        }
+
+    }
+
+    // Fix 2: Quick language loading without heavy processing
+    private fun loadLanguagesQuickly() {
+        try {
+            availableLanguages.clear()
+
+            textToSpeech?.let { tts ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val locales = tts.availableLanguages
+
+                    // Just add English locales quickly without extensive processing
+                    locales?.filter { it.language == "en" }?.take(10)?.forEach { locale ->
+                        availableLanguages.add(
+                            TtsLanguageInfo(
+                                locale = locale,
+                                displayName = "${locale.displayName} (${locale})",
+                                isAvailable = true
+                            )
+                        )
+                    }
+                } else {
+                    // Add just common English locales for older Android
+                    listOf(Locale.US, Locale.UK, Locale.CANADA).forEach { locale ->
+                        availableLanguages.add(
+                            TtsLanguageInfo(
+                                locale = locale,
+                                displayName = "${locale.displayName} (${locale})",
+                                isAvailable = true
+                            )
+                        )
+                    }
+                }
+
+                LogManager.i(TAG, "Quickly loaded ${availableLanguages.size} languages")
+            }
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error in quick language loading", e)
+        }
+    }
+
+    // Fix 3: Quick voice loading without detailed analysis
+    private fun loadVoicesQuickly() {
+        try {
+            availableVoices.clear()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                textToSpeech?.let { tts ->
+                    val allVoices = tts.voices
+
+                    if (allVoices != null) {
+                        // Just get English voices quickly, limit to reasonable number
+                        allVoices.asSequence()
+                            .filter { it.locale.language == "en" }
+                            .take(20) // Limit to prevent UI freeze
+                            .forEach { voice ->
+                                val typeIcon = if (voice.isNetworkConnectionRequired) "🌐" else "📱"
+                                val qualityStars = "★".repeat(maxOf(1, voice.quality / 100))
+
+                                availableVoices.add(
+                                    TtsVoiceInfo(
+                                        name = voice.name,
+                                        displayName = "${voice.locale.displayName} $typeIcon $qualityStars",
+                                        locale = voice.locale,
+                                        quality = voice.quality,
+                                        isNetworkConnectionRequired = voice.isNetworkConnectionRequired
+                                    )
+                                )
+                            }
+
+                        LogManager.i(TAG, "Quickly loaded ${availableVoices.size} voices")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error in quick voice loading", e)
+        }
+    }
+
+    // Quick voice application without heavy processing
+    private fun applyVoiceSettingsQuickly(voiceName: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && voiceName.isNotEmpty()) {
+                textToSpeech?.let { tts ->
+                    val voice = tts.voices?.find { it.name == voiceName }
+                    voice?.let {
+                        tts.setVoice(it)
+                        LogManager.d(TAG, "Quickly applied voice: ${it.name}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LogManager.logCaughtException(TAG, "Error in quick voice application", e)
+        }
+    }
+
+} // End of MainActivity Class
 
 private fun Modifier.disableSelection(): Modifier = composed {
     this.pointerInput(Unit) {
@@ -3946,7 +4365,7 @@ private fun Modifier.disableSelection(): Modifier = composed {
     }
 }
 
-data class Selection(val start: Int, val end: Int)
+//data class Selection(val start: Int, val end: Int)
 
 // Settings related
 
@@ -3958,7 +4377,7 @@ data class ChatState(
     val isAnimationVisible: Boolean = false,
     val ragFiles: List<RagFile> = listOf(
         RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.html"),
-        RagFile("d4d7b17b-7397-4af9-b9ee-d6e081dd1196","Table of Workcells Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.txt"),
+        RagFile("a57325c5-8bda-4525-8741-37a25ec557d6", "Table of Workcells, Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.html"),
         RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", "https://sparkonelabs.com/RAG_pdfs/18036_01.pdf"),
         RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", "https://sparkonelabs.com/RAG_pdfs/18036_02.pdf"),
         RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", "https://sparkonelabs.com/RAG_pdfs/18036_03.pdf"),
