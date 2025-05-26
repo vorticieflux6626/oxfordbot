@@ -1,5 +1,11 @@
 package com.example.oxfordbot
 
+// Section to import various elements of project
+import com.example.oxfordbot.ui.theme.*
+import com.example.oxfordbot.SettingsScreenWithLazyLoading
+import com.example.oxfordbot.NetworkDetailsScreen
+import com.example.oxfordbot.RagDataScreen
+
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Intent
@@ -69,7 +75,6 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.ButtonDefaults
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
-import com.example.oxfordbot.ui.theme.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.io.IOException
@@ -993,7 +998,6 @@ class MainActivity : ComponentActivity() {
                         }
 
                         showSettingsScreen.value -> {
-                            // Use the non-blocking version instead of the heavy blocking version
                             SettingsScreenWithLazyLoading(
                                 settings = appSettings.value,
                                 onSettingsChange = { newSettings ->
@@ -1010,7 +1014,58 @@ class MainActivity : ComponentActivity() {
                                         LogManager.i(TAG, "Chat ID changed: $oldChatId -> $newChatId")
                                     }
                                 },
-                                onClose = { showSettingsScreen.value = false }
+                                onClose = { showSettingsScreen.value = false },
+                                textToSpeech = textToSpeech,
+                                isTtsInitialized = isTtsInitialized.value,
+                                availableLanguages = availableLanguages,
+                                availableVoices = availableVoices,
+                                onLoadLanguages = { loadLanguagesQuickly() },
+                                onLoadVoices = { loadVoicesQuickly() },
+                                onApplyVoiceSettings = { voiceName ->
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        applyVoiceSettingsQuickly(voiceName)
+                                    }
+                                },
+                                onTestSpeech = {
+                                    LogManager.i(TAG, "Test Speech button clicked - USER INITIATED")
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        try {
+                                            textToSpeech?.stop()
+                                            textToSpeech?.let { tts ->
+                                                tts.setSpeechRate(appSettings.value.ttsSpeechRate)
+                                                tts.setPitch(appSettings.value.ttsPitch)
+                                                val locale = parseLocaleString(appSettings.value.ttsLanguage)
+                                                tts.setLanguage(locale)
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && appSettings.value.ttsVoice.isNotEmpty()) {
+                                                    val voice = tts.voices?.find { it.name == appSettings.value.ttsVoice }
+                                                    voice?.let { tts.setVoice(it) }
+                                                }
+                                            }
+                                            val testText = "This is a test of the selected voice settings."
+                                            textToSpeech?.speak(
+                                                testText,
+                                                TextToSpeech.QUEUE_FLUSH,
+                                                null,
+                                                "voice_test_${System.currentTimeMillis()}"
+                                            )
+                                            LogManager.i(TAG, "Test speech initiated")
+                                        } catch (e: Exception) {
+                                            LogManager.logCaughtException(TAG, "Error in test speech", e)
+                                        }
+                                    }
+                                },
+                                onClearChatHistory = {
+                                    chatState.value = chatState.value.copy(messages = emptyList())
+                                    LogManager.i(TAG, "Chat history cleared by user from settings")
+                                },
+                                onRefreshTtsData = {
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        withContext(Dispatchers.Main) {
+                                            loadLanguagesQuickly()
+                                            loadVoicesQuickly()
+                                        }
+                                    }
+                                }
                             )
                         }
 
@@ -1129,1052 +1184,1052 @@ class MainActivity : ComponentActivity() {
     }
 
     // Complete Settings Screen Composable with Lazy Loading
-    @Composable
-    fun SettingsScreenWithLazyLoading(
-        settings: AppSettings,
-        onSettingsChange: (AppSettings) -> Unit,
-        onClose: () -> Unit
-    ) {
-        val scrollState = rememberLazyListState()
-        var isLoadingTtsData by remember { mutableStateOf(true) }
-        var ttsLoadingMessage by remember { mutableStateOf("Loading TTS data...") }
-
-        // Non-blocking TTS data loading
-        LaunchedEffect(Unit) {
-            launch(Dispatchers.IO) {
-                try {
-                    withContext(Dispatchers.Main) {
-                        ttsLoadingMessage = "Loading languages..."
-                    }
-
-                    delay(50) // Let UI update
-
-                    withContext(Dispatchers.Main) {
-                        loadLanguagesQuickly()
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        ttsLoadingMessage = "Loading voices..."
-                    }
-
-                    delay(50) // Let UI update
-
-                    withContext(Dispatchers.Main) {
-                        loadVoicesQuickly()
-                    }
-
-                    delay(100) // Small final delay
-
-                    withContext(Dispatchers.Main) {
-                        isLoadingTtsData = false
-                    }
-
-                } catch (e: Exception) {
-                    LogManager.logCaughtException(TAG, "Error in lazy TTS loading", e)
-                    withContext(Dispatchers.Main) {
-                        isLoadingTtsData = false
-                    }
-                }
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Navy)
-                .padding(16.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Settings",
-                    color = Gold,
-                    style = MaterialTheme.typography.h6
-                )
-
-                Button(
-                    onClick = onClose,
-                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
-                ) {
-                    Text("Done", color = Color.White)
-                }
-            }
-
-            Divider(color = LightBlue, thickness = 1.dp)
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                state = scrollState
-            ) {
-                // Model Selection Section
-                item {
-                    SettingsSection(title = "AI Model") {
-                        ModelSelectionCard(
-                            selectedModel = settings.selectedModel,
-                            onModelSelected = { model ->
-                                onSettingsChange(settings.copy(selectedModel = model))
-                            }
-                        )
-                    }
-                }
-
-                // API Settings Section
-                item {
-                    SettingsSection(title = "API Settings") {
-                        TimeoutSettingCard(
-                            timeout = settings.apiTimeout,
-                            onTimeoutChanged = { timeout ->
-                                onSettingsChange(settings.copy(apiTimeout = timeout))
-                            }
-                        )
-                    }
-                }
-
-                // App Behavior Section
-                item {
-                    SettingsSection(title = "App Behavior") {
-                        Column {
-                            SwitchSettingCard(
-                                title = "Show Thinking",
-                                description = "Display AI reasoning process in responses",
-                                isEnabled = settings.showThinking,
-                                onToggle = { enabled ->
-                                    onSettingsChange(settings.copy(showThinking = enabled))
-                                }
-                            )
-
-                            SwitchSettingCard(
-                                title = "Enable Text-to-Speech",
-                                description = "Enable voice output for AI responses",
-                                isEnabled = settings.enableTTS,
-                                onToggle = { enabled ->
-                                    onSettingsChange(settings.copy(enableTTS = enabled))
-                                }
-                            )
-
-                            if (settings.enableTTS) {
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                if (isLoadingTtsData) {
-                                    // Show loading indicator
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        backgroundColor = Color.Black.copy(alpha = 0.3f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(16.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(24.dp),
-                                                color = Gold,
-                                                strokeWidth = 2.dp
-                                            )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Text(
-                                                text = ttsLoadingMessage,
-                                                color = Color.White,
-                                                style = MaterialTheme.typography.body2
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    // Speech Rate
-                                    SliderSettingCard(
-                                        title = "Speech Rate",
-                                        description = "How fast the speech is (0.5 = slow, 2.0 = fast)",
-                                        value = settings.ttsSpeechRate,
-                                        range = 0.5f..2.0f,
-                                        steps = 29, // 0.05 increments
-                                        onValueChanged = { rate ->
-                                            onSettingsChange(settings.copy(ttsSpeechRate = rate))
-                                            // Apply immediately for preview
-                                            textToSpeech?.setSpeechRate(rate)
-                                        }
-                                    )
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    // Pitch
-                                    SliderSettingCard(
-                                        title = "Pitch",
-                                        description = "Voice tone (0.5 = low, 2.0 = high)",
-                                        value = settings.ttsPitch,
-                                        range = 0.5f..2.0f,
-                                        steps = 29, // 0.05 increments
-                                        onValueChanged = { pitch ->
-                                            onSettingsChange(settings.copy(ttsPitch = pitch))
-                                            // Apply immediately for preview
-                                            textToSpeech?.setPitch(pitch)
-                                        }
-                                    )
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    // Volume
-                                    SliderSettingCard(
-                                        title = "TTS Volume",
-                                        description = "Speech volume (0.0 = silent, 1.0 = max)",
-                                        value = settings.ttsVolume,
-                                        range = 0.0f..1.0f,
-                                        steps = 19, // 0.05 increments
-                                        onValueChanged = { volume ->
-                                            onSettingsChange(settings.copy(ttsVolume = volume))
-                                        }
-                                    )
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    // Language Selection
-                                    if (availableLanguages.isNotEmpty()) {
-                                        DropdownSettingCard(
-                                            title = "Language",
-                                            description = "Select TTS language",
-                                            selectedValue = settings.ttsLanguage,
-                                            options = availableLanguages.map {
-                                                formatLocaleString(it.locale) to it.displayName
-                                            },
-                                            onSelectionChanged = { localeString ->
-                                                onSettingsChange(settings.copy(ttsLanguage = localeString))
-                                                // Apply immediately
-                                                val locale = parseLocaleString(localeString)
-                                                textToSpeech?.setLanguage(locale)
-                                                // Reload voices for new language (non-blocking)
-                                                coroutineScope.launch(Dispatchers.IO) {
-                                                    withContext(Dispatchers.Main) {
-                                                        loadVoicesQuickly()
-                                                    }
-                                                }
-                                            }
-                                        )
-
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                    }
-
-                                    // Voice Selection (API 21+)
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                        val voiceOptions = if (availableVoices.isNotEmpty()) {
-                                            listOf("" to "Default Voice") + availableVoices.map {
-                                                it.name to it.displayName
-                                            }
-                                        } else {
-                                            listOf("" to "Default Voice")
-                                        }
-
-                                        DropdownSettingCard(
-                                            title = "Voice",
-                                            description = if (availableVoices.isEmpty())
-                                                "Loading voices..."
-                                            else
-                                                "Select specific voice (optional)",
-                                            selectedValue = settings.ttsVoice,
-                                            options = voiceOptions,
-                                            onSelectionChanged = { voiceName ->
-                                                onSettingsChange(settings.copy(ttsVoice = voiceName))
-                                                // Apply voice in background to avoid UI freeze
-                                                coroutineScope.launch(Dispatchers.Main) {
-                                                    applyVoiceSettingsQuickly(voiceName)
-                                                }
-                                            }
-                                        )
-
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                    }
-
-                                    // Test TTS Button
-                                    Button(
-                                        onClick = {
-                                            LogManager.i(TAG, "Test Speech button clicked - USER INITIATED")
-
-                                            // Quick test without heavy processing
-                                            coroutineScope.launch(Dispatchers.Main) {
-                                                try {
-                                                    // Stop any current speech
-                                                    textToSpeech?.stop()
-
-                                                    // Apply current settings quickly
-                                                    textToSpeech?.let { tts ->
-                                                        tts.setSpeechRate(settings.ttsSpeechRate)
-                                                        tts.setPitch(settings.ttsPitch)
-
-                                                        val locale = parseLocaleString(settings.ttsLanguage)
-                                                        tts.setLanguage(locale)
-
-                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && settings.ttsVoice.isNotEmpty()) {
-                                                            val voice = tts.voices?.find { it.name == settings.ttsVoice }
-                                                            voice?.let { tts.setVoice(it) }
-                                                        }
-                                                    }
-
-                                                    // Test speak with immediate playback
-                                                    val testText = "This is a test of the selected voice settings."
-                                                    textToSpeech?.speak(
-                                                        testText,
-                                                        TextToSpeech.QUEUE_FLUSH,
-                                                        null,
-                                                        "voice_test_${System.currentTimeMillis()}"
-                                                    )
-
-                                                    LogManager.i(TAG, "Test speech initiated")
-                                                } catch (e: Exception) {
-                                                    LogManager.logCaughtException(TAG, "Error in test speech", e)
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("Test Speech", color = Color.White)
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            SwitchSettingCard(
-                                title = "Auto-save Chat",
-                                description = "Automatically save chat history",
-                                isEnabled = settings.autoSaveChat,
-                                onToggle = { enabled ->
-                                    onSettingsChange(settings.copy(autoSaveChat = enabled))
-                                }
-                            )
-
-                            // Add this section right after the Auto-save Chat toggle in your SettingsScreenWithLazyLoading composable
-// Find the SwitchSettingCard for "Auto-save Chat" and add this code right after it:
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-// Clear Chat History Button
-                            Button(
-                                onClick = {
-                                    // Clear the chat messages
-                                    chatState.value = chatState.value.copy(messages = emptyList())
-
-                                    // Log the action
-                                    LogManager.i(TAG, "Chat history cleared by user from settings")
-
-                                    // Show confirmation toast
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "Chat history cleared",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Clear Chat History", color = Color.White)
-                            }
-
-                            Text(
-                                text = "This will permanently delete all chat messages",
-                                color = Color.Gray,
-                                style = MaterialTheme.typography.caption,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-
-                        }
-                    }
-                }
-
-                // TTS Debugging
-                item {
-                    SettingsSection(title = "TTS Debug Info") {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            backgroundColor = Color.Black.copy(alpha = 0.3f)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = "TTS Status",
-                                    color = Gold,
-                                    style = MaterialTheme.typography.body1,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                Text(
-                                    text = "Initialized: ${isTtsInitialized.value}",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.body2
-                                )
-
-                                Text(
-                                    text = "Languages: ${availableLanguages.size}",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.body2
-                                )
-
-                                Text(
-                                    text = "Voices: ${availableVoices.size}",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.body2
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = {
-                                            // Reload voices non-blocking
-                                            coroutineScope.launch(Dispatchers.IO) {
-                                                withContext(Dispatchers.Main) {
-                                                    loadLanguagesQuickly()
-                                                    loadVoicesQuickly()
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Reload TTS", color = Color.White)
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            // Add simple fallback voices
-                                            loadVoicesSimple()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Add Default Voice", color = Color.White)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Logging Settings Section
-                item {
-                    SettingsSection(title = "Logging") {
-                        NumberSettingCard(
-                            title = "Max Log Entries",
-                            description = "Maximum number of log entries to keep",
-                            value = settings.maxLogEntries,
-                            range = 100..1000,
-                            step = 100,
-                            onValueChanged = { value ->
-                                onSettingsChange(settings.copy(maxLogEntries = value))
-                            }
-                        )
-                    }
-                }
-
-                // Network Settings Section
-                item {
-                    SettingsSection(title = "Network") {
-                        NumberSettingCard(
-                            title = "Test Interval",
-                            description = "Connectivity test interval (seconds)",
-                            value = settings.connectivityTestInterval,
-                            range = 10..300,
-                            step = 10,
-                            onValueChanged = { value ->
-                                onSettingsChange(settings.copy(connectivityTestInterval = value))
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun SettingsSection(
-        title: String,
-        content: @Composable () -> Unit
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-        ) {
-            Text(
-                text = title,
-                color = Gold,
-                style = MaterialTheme.typography.subtitle1,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            content()
-            Divider(
-                color = Color.DarkGray,
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
-
-    @Composable
-    fun ModelSelectionCard(
-        selectedModel: String,
-        onModelSelected: (String) -> Unit
-    ) {
-        val availableModels = listOf("qwen3:8b", "qwen3:32b", "deepseek-r1:32b")
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Select AI Model",
-                    color = LightBlue,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                availableModels.forEach { model ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onModelSelected(model) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedModel == model,
-                            onClick = { onModelSelected(model) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = Gold,
-                                unselectedColor = Color.Gray
-                            )
-                        )
-
-                        Column(
-                            modifier = Modifier.padding(start = 8.dp)
-                        ) {
-                            Text(
-                                text = model,
-                                color = Color.White,
-                                style = MaterialTheme.typography.body2
-                            )
-                            Text(
-                                text = getModelDescription(model),
-                                color = Color.Gray,
-                                style = MaterialTheme.typography.caption
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun SwitchSettingCard(
-        title: String,
-        description: String,
-        isEnabled: Boolean,
-        onToggle: (Boolean) -> Unit
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggle(!isEnabled) }
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        style = MaterialTheme.typography.body1
-                    )
-                    Text(
-                        text = description,
-                        color = Color.Gray,
-                        style = MaterialTheme.typography.caption
-                    )
-                }
-
-                Switch(
-                    checked = isEnabled,
-                    onCheckedChange = onToggle,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Gold,
-                        checkedTrackColor = Gold.copy(alpha = 0.5f),
-                        uncheckedThumbColor = Color.Gray,
-                        uncheckedTrackColor = Color.DarkGray
-                    )
-                )
-            }
-        }
-    }
-
-    @Composable
-    fun TimeoutSettingCard(
-        timeout: Int,
-        onTimeoutChanged: (Int) -> Unit
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "API Timeout",
-                    color = Color.White,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = "Request timeout in seconds",
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.caption
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { onTimeoutChanged(maxOf(60, timeout - 60)) },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-                    ) {
-                        Text("-", color = Color.White)
-                    }
-
-                    Text(
-                        text = "${timeout}s",
-                        color = Gold,
-                        style = MaterialTheme.typography.h6
-                    )
-
-                    Button(
-                        onClick = { onTimeoutChanged(minOf(1200, timeout + 60)) },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-                    ) {
-                        Text("+", color = Color.White)
-                    }
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun NumberSettingCard(
-        title: String,
-        description: String,
-        value: Int,
-        range: IntRange,
-        step: Int,
-        onValueChanged: (Int) -> Unit
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = description,
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.caption
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { onValueChanged(maxOf(range.first, value - step)) },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-                    ) {
-                        Text("-", color = Color.White)
-                    }
-
-                    Text(
-                        text = "$value",
-                        color = Gold,
-                        style = MaterialTheme.typography.h6
-                    )
-
-                    Button(
-                        onClick = { onValueChanged(minOf(range.last, value + step)) },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-                    ) {
-                        Text("+", color = Color.White)
-                    }
-                }
-            }
-        }
-    }
+//    @Composable
+//    fun SettingsScreenWithLazyLoading(
+//        settings: AppSettings,
+//        onSettingsChange: (AppSettings) -> Unit,
+//        onClose: () -> Unit
+//    ) {
+//        val scrollState = rememberLazyListState()
+//        var isLoadingTtsData by remember { mutableStateOf(true) }
+//        var ttsLoadingMessage by remember { mutableStateOf("Loading TTS data...") }
+//
+//        // Non-blocking TTS data loading
+//        LaunchedEffect(Unit) {
+//            launch(Dispatchers.IO) {
+//                try {
+//                    withContext(Dispatchers.Main) {
+//                        ttsLoadingMessage = "Loading languages..."
+//                    }
+//
+//                    delay(50) // Let UI update
+//
+//                    withContext(Dispatchers.Main) {
+//                        loadLanguagesQuickly()
+//                    }
+//
+//                    withContext(Dispatchers.Main) {
+//                        ttsLoadingMessage = "Loading voices..."
+//                    }
+//
+//                    delay(50) // Let UI update
+//
+//                    withContext(Dispatchers.Main) {
+//                        loadVoicesQuickly()
+//                    }
+//
+//                    delay(100) // Small final delay
+//
+//                    withContext(Dispatchers.Main) {
+//                        isLoadingTtsData = false
+//                    }
+//
+//                } catch (e: Exception) {
+//                    LogManager.logCaughtException(TAG, "Error in lazy TTS loading", e)
+//                    withContext(Dispatchers.Main) {
+//                        isLoadingTtsData = false
+//                    }
+//                }
+//            }
+//        }
+//
+//        Column(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .background(Navy)
+//                .padding(16.dp)
+//        ) {
+//            // Header
+//            Row(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(bottom = 16.dp),
+//                horizontalArrangement = Arrangement.SpaceBetween,
+//                verticalAlignment = Alignment.CenterVertically
+//            ) {
+//                Text(
+//                    text = "Settings",
+//                    color = Gold,
+//                    style = MaterialTheme.typography.h6
+//                )
+//
+//                Button(
+//                    onClick = onClose,
+//                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
+//                ) {
+//                    Text("Done", color = Color.White)
+//                }
+//            }
+//
+//            Divider(color = LightBlue, thickness = 1.dp)
+//
+//            LazyColumn(
+//                modifier = Modifier
+//                    .fillMaxSize()
+//                    .weight(1f),
+//                state = scrollState
+//            ) {
+//                // Model Selection Section
+//                item {
+//                    SettingsSection(title = "AI Model") {
+//                        ModelSelectionCard(
+//                            selectedModel = settings.selectedModel,
+//                            onModelSelected = { model ->
+//                                onSettingsChange(settings.copy(selectedModel = model))
+//                            }
+//                        )
+//                    }
+//                }
+//
+//                // API Settings Section
+//                item {
+//                    SettingsSection(title = "API Settings") {
+//                        TimeoutSettingCard(
+//                            timeout = settings.apiTimeout,
+//                            onTimeoutChanged = { timeout ->
+//                                onSettingsChange(settings.copy(apiTimeout = timeout))
+//                            }
+//                        )
+//                    }
+//                }
+//
+//                // App Behavior Section
+//                item {
+//                    SettingsSection(title = "App Behavior") {
+//                        Column {
+//                            SwitchSettingCard(
+//                                title = "Show Thinking",
+//                                description = "Display AI reasoning process in responses",
+//                                isEnabled = settings.showThinking,
+//                                onToggle = { enabled ->
+//                                    onSettingsChange(settings.copy(showThinking = enabled))
+//                                }
+//                            )
+//
+//                            SwitchSettingCard(
+//                                title = "Enable Text-to-Speech",
+//                                description = "Enable voice output for AI responses",
+//                                isEnabled = settings.enableTTS,
+//                                onToggle = { enabled ->
+//                                    onSettingsChange(settings.copy(enableTTS = enabled))
+//                                }
+//                            )
+//
+//                            if (settings.enableTTS) {
+//                                Spacer(modifier = Modifier.height(8.dp))
+//
+//                                if (isLoadingTtsData) {
+//                                    // Show loading indicator
+//                                    Card(
+//                                        modifier = Modifier.fillMaxWidth(),
+//                                        backgroundColor = Color.Black.copy(alpha = 0.3f)
+//                                    ) {
+//                                        Row(
+//                                            modifier = Modifier.padding(16.dp),
+//                                            verticalAlignment = Alignment.CenterVertically
+//                                        ) {
+//                                            CircularProgressIndicator(
+//                                                modifier = Modifier.size(24.dp),
+//                                                color = Gold,
+//                                                strokeWidth = 2.dp
+//                                            )
+//                                            Spacer(modifier = Modifier.width(12.dp))
+//                                            Text(
+//                                                text = ttsLoadingMessage,
+//                                                color = Color.White,
+//                                                style = MaterialTheme.typography.body2
+//                                            )
+//                                        }
+//                                    }
+//                                } else {
+//                                    // Speech Rate
+//                                    SliderSettingCard(
+//                                        title = "Speech Rate",
+//                                        description = "How fast the speech is (0.5 = slow, 2.0 = fast)",
+//                                        value = settings.ttsSpeechRate,
+//                                        range = 0.5f..2.0f,
+//                                        steps = 29, // 0.05 increments
+//                                        onValueChanged = { rate ->
+//                                            onSettingsChange(settings.copy(ttsSpeechRate = rate))
+//                                            // Apply immediately for preview
+//                                            textToSpeech?.setSpeechRate(rate)
+//                                        }
+//                                    )
+//
+//                                    Spacer(modifier = Modifier.height(8.dp))
+//
+//                                    // Pitch
+//                                    SliderSettingCard(
+//                                        title = "Pitch",
+//                                        description = "Voice tone (0.5 = low, 2.0 = high)",
+//                                        value = settings.ttsPitch,
+//                                        range = 0.5f..2.0f,
+//                                        steps = 29, // 0.05 increments
+//                                        onValueChanged = { pitch ->
+//                                            onSettingsChange(settings.copy(ttsPitch = pitch))
+//                                            // Apply immediately for preview
+//                                            textToSpeech?.setPitch(pitch)
+//                                        }
+//                                    )
+//
+//                                    Spacer(modifier = Modifier.height(8.dp))
+//
+//                                    // Volume
+//                                    SliderSettingCard(
+//                                        title = "TTS Volume",
+//                                        description = "Speech volume (0.0 = silent, 1.0 = max)",
+//                                        value = settings.ttsVolume,
+//                                        range = 0.0f..1.0f,
+//                                        steps = 19, // 0.05 increments
+//                                        onValueChanged = { volume ->
+//                                            onSettingsChange(settings.copy(ttsVolume = volume))
+//                                        }
+//                                    )
+//
+//                                    Spacer(modifier = Modifier.height(8.dp))
+//
+//                                    // Language Selection
+//                                    if (availableLanguages.isNotEmpty()) {
+//                                        DropdownSettingCard(
+//                                            title = "Language",
+//                                            description = "Select TTS language",
+//                                            selectedValue = settings.ttsLanguage,
+//                                            options = availableLanguages.map {
+//                                                formatLocaleString(it.locale) to it.displayName
+//                                            },
+//                                            onSelectionChanged = { localeString ->
+//                                                onSettingsChange(settings.copy(ttsLanguage = localeString))
+//                                                // Apply immediately
+//                                                val locale = parseLocaleString(localeString)
+//                                                textToSpeech?.setLanguage(locale)
+//                                                // Reload voices for new language (non-blocking)
+//                                                coroutineScope.launch(Dispatchers.IO) {
+//                                                    withContext(Dispatchers.Main) {
+//                                                        loadVoicesQuickly()
+//                                                    }
+//                                                }
+//                                            }
+//                                        )
+//
+//                                        Spacer(modifier = Modifier.height(8.dp))
+//                                    }
+//
+//                                    // Voice Selection (API 21+)
+//                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//                                        val voiceOptions = if (availableVoices.isNotEmpty()) {
+//                                            listOf("" to "Default Voice") + availableVoices.map {
+//                                                it.name to it.displayName
+//                                            }
+//                                        } else {
+//                                            listOf("" to "Default Voice")
+//                                        }
+//
+//                                        DropdownSettingCard(
+//                                            title = "Voice",
+//                                            description = if (availableVoices.isEmpty())
+//                                                "Loading voices..."
+//                                            else
+//                                                "Select specific voice (optional)",
+//                                            selectedValue = settings.ttsVoice,
+//                                            options = voiceOptions,
+//                                            onSelectionChanged = { voiceName ->
+//                                                onSettingsChange(settings.copy(ttsVoice = voiceName))
+//                                                // Apply voice in background to avoid UI freeze
+//                                                coroutineScope.launch(Dispatchers.Main) {
+//                                                    applyVoiceSettingsQuickly(voiceName)
+//                                                }
+//                                            }
+//                                        )
+//
+//                                        Spacer(modifier = Modifier.height(8.dp))
+//                                    }
+//
+//                                    // Test TTS Button
+//                                    Button(
+//                                        onClick = {
+//                                            LogManager.i(TAG, "Test Speech button clicked - USER INITIATED")
+//
+//                                            // Quick test without heavy processing
+//                                            coroutineScope.launch(Dispatchers.Main) {
+//                                                try {
+//                                                    // Stop any current speech
+//                                                    textToSpeech?.stop()
+//
+//                                                    // Apply current settings quickly
+//                                                    textToSpeech?.let { tts ->
+//                                                        tts.setSpeechRate(settings.ttsSpeechRate)
+//                                                        tts.setPitch(settings.ttsPitch)
+//
+//                                                        val locale = parseLocaleString(settings.ttsLanguage)
+//                                                        tts.setLanguage(locale)
+//
+//                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && settings.ttsVoice.isNotEmpty()) {
+//                                                            val voice = tts.voices?.find { it.name == settings.ttsVoice }
+//                                                            voice?.let { tts.setVoice(it) }
+//                                                        }
+//                                                    }
+//
+//                                                    // Test speak with immediate playback
+//                                                    val testText = "This is a test of the selected voice settings."
+//                                                    textToSpeech?.speak(
+//                                                        testText,
+//                                                        TextToSpeech.QUEUE_FLUSH,
+//                                                        null,
+//                                                        "voice_test_${System.currentTimeMillis()}"
+//                                                    )
+//
+//                                                    LogManager.i(TAG, "Test speech initiated")
+//                                                } catch (e: Exception) {
+//                                                    LogManager.logCaughtException(TAG, "Error in test speech", e)
+//                                                }
+//                                            }
+//                                        },
+//                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
+//                                        modifier = Modifier.fillMaxWidth()
+//                                    ) {
+//                                        Text("Test Speech", color = Color.White)
+//                                    }
+//                                }
+//                            }
+//
+//                            Spacer(modifier = Modifier.height(8.dp))
+//
+//                            SwitchSettingCard(
+//                                title = "Auto-save Chat",
+//                                description = "Automatically save chat history",
+//                                isEnabled = settings.autoSaveChat,
+//                                onToggle = { enabled ->
+//                                    onSettingsChange(settings.copy(autoSaveChat = enabled))
+//                                }
+//                            )
+//
+//                            // Add this section right after the Auto-save Chat toggle in your SettingsScreenWithLazyLoading composable
+//// Find the SwitchSettingCard for "Auto-save Chat" and add this code right after it:
+//
+//                            Spacer(modifier = Modifier.height(8.dp))
+//
+//// Clear Chat History Button
+//                            Button(
+//                                onClick = {
+//                                    // Clear the chat messages
+//                                    chatState.value = chatState.value.copy(messages = emptyList())
+//
+//                                    // Log the action
+//                                    LogManager.i(TAG, "Chat history cleared by user from settings")
+//
+//                                    // Show confirmation toast
+//                                    Toast.makeText(
+//                                        this@MainActivity,
+//                                        "Chat history cleared",
+//                                        Toast.LENGTH_SHORT
+//                                    ).show()
+//                                },
+//                                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red),
+//                                modifier = Modifier.fillMaxWidth()
+//                            ) {
+//                                Text("Clear Chat History", color = Color.White)
+//                            }
+//
+//                            Text(
+//                                text = "This will permanently delete all chat messages",
+//                                color = Color.Gray,
+//                                style = MaterialTheme.typography.caption,
+//                                modifier = Modifier.padding(top = 4.dp)
+//                            )
+//
+//                        }
+//                    }
+//                }
+//
+//                // TTS Debugging
+//                item {
+//                    SettingsSection(title = "TTS Debug Info") {
+//                        Card(
+//                            modifier = Modifier.fillMaxWidth(),
+//                            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//                        ) {
+//                            Column(modifier = Modifier.padding(16.dp)) {
+//                                Text(
+//                                    text = "TTS Status",
+//                                    color = Gold,
+//                                    style = MaterialTheme.typography.body1,
+//                                    fontWeight = FontWeight.Bold
+//                                )
+//
+//                                Text(
+//                                    text = "Initialized: ${isTtsInitialized.value}",
+//                                    color = Color.White,
+//                                    style = MaterialTheme.typography.body2
+//                                )
+//
+//                                Text(
+//                                    text = "Languages: ${availableLanguages.size}",
+//                                    color = Color.White,
+//                                    style = MaterialTheme.typography.body2
+//                                )
+//
+//                                Text(
+//                                    text = "Voices: ${availableVoices.size}",
+//                                    color = Color.White,
+//                                    style = MaterialTheme.typography.body2
+//                                )
+//
+//                                Spacer(modifier = Modifier.height(8.dp))
+//
+//                                Row(
+//                                    modifier = Modifier.fillMaxWidth(),
+//                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+//                                ) {
+//                                    Button(
+//                                        onClick = {
+//                                            // Reload voices non-blocking
+//                                            coroutineScope.launch(Dispatchers.IO) {
+//                                                withContext(Dispatchers.Main) {
+//                                                    loadLanguagesQuickly()
+//                                                    loadVoicesQuickly()
+//                                                }
+//                                            }
+//                                        },
+//                                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue),
+//                                        modifier = Modifier.weight(1f)
+//                                    ) {
+//                                        Text("Reload TTS", color = Color.White)
+//                                    }
+//
+//                                    Button(
+//                                        onClick = {
+//                                            // Add simple fallback voices
+//                                            loadVoicesSimple()
+//                                        },
+//                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
+//                                        modifier = Modifier.weight(1f)
+//                                    ) {
+//                                        Text("Add Default Voice", color = Color.White)
+//                                    }
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//
+//                // Logging Settings Section
+//                item {
+//                    SettingsSection(title = "Logging") {
+//                        NumberSettingCard(
+//                            title = "Max Log Entries",
+//                            description = "Maximum number of log entries to keep",
+//                            value = settings.maxLogEntries,
+//                            range = 100..1000,
+//                            step = 100,
+//                            onValueChanged = { value ->
+//                                onSettingsChange(settings.copy(maxLogEntries = value))
+//                            }
+//                        )
+//                    }
+//                }
+//
+//                // Network Settings Section
+//                item {
+//                    SettingsSection(title = "Network") {
+//                        NumberSettingCard(
+//                            title = "Test Interval",
+//                            description = "Connectivity test interval (seconds)",
+//                            value = settings.connectivityTestInterval,
+//                            range = 10..300,
+//                            step = 10,
+//                            onValueChanged = { value ->
+//                                onSettingsChange(settings.copy(connectivityTestInterval = value))
+//                            }
+//                        )
+//                    }
+//                }
+//            }
+//        }
+//    }
+
+//    @Composable
+//    fun SettingsSection(
+//        title: String,
+//        content: @Composable () -> Unit
+//    ) {
+//        Column(
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .padding(vertical = 8.dp)
+//        ) {
+//            Text(
+//                text = title,
+//                color = Gold,
+//                style = MaterialTheme.typography.subtitle1,
+//                fontWeight = FontWeight.Bold,
+//                modifier = Modifier.padding(bottom = 8.dp)
+//            )
+//            content()
+//            Divider(
+//                color = Color.DarkGray,
+//                thickness = 0.5.dp,
+//                modifier = Modifier.padding(top = 8.dp)
+//            )
+//        }
+//    }
+
+//    @Composable
+//    fun ModelSelectionCard(
+//        selectedModel: String,
+//        onModelSelected: (String) -> Unit
+//    ) {
+//        val availableModels = listOf("qwen3:8b", "qwen3:32b", "deepseek-r1:32b")
+//
+//        Card(
+//            modifier = Modifier.fillMaxWidth(),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Column(
+//                modifier = Modifier.padding(16.dp)
+//            ) {
+//                Text(
+//                    text = "Select AI Model",
+//                    color = LightBlue,
+//                    style = MaterialTheme.typography.body1,
+//                    fontWeight = FontWeight.Bold
+//                )
+//
+//                Spacer(modifier = Modifier.height(12.dp))
+//
+//                availableModels.forEach { model ->
+//                    Row(
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .clickable { onModelSelected(model) }
+//                            .padding(vertical = 4.dp),
+//                        verticalAlignment = Alignment.CenterVertically
+//                    ) {
+//                        RadioButton(
+//                            selected = selectedModel == model,
+//                            onClick = { onModelSelected(model) },
+//                            colors = RadioButtonDefaults.colors(
+//                                selectedColor = Gold,
+//                                unselectedColor = Color.Gray
+//                            )
+//                        )
+//
+//                        Column(
+//                            modifier = Modifier.padding(start = 8.dp)
+//                        ) {
+//                            Text(
+//                                text = model,
+//                                color = Color.White,
+//                                style = MaterialTheme.typography.body2
+//                            )
+//                            Text(
+//                                text = getModelDescription(model),
+//                                color = Color.Gray,
+//                                style = MaterialTheme.typography.caption
+//                            )
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//    }
+
+//    @Composable
+//    fun SwitchSettingCard(
+//        title: String,
+//        description: String,
+//        isEnabled: Boolean,
+//        onToggle: (Boolean) -> Unit
+//    ) {
+//        Card(
+//            modifier = Modifier.fillMaxWidth(),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Row(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .clickable { onToggle(!isEnabled) }
+//                    .padding(16.dp),
+//                horizontalArrangement = Arrangement.SpaceBetween,
+//                verticalAlignment = Alignment.CenterVertically
+//            ) {
+//                Column(
+//                    modifier = Modifier.weight(1f)
+//                ) {
+//                    Text(
+//                        text = title,
+//                        color = Color.White,
+//                        style = MaterialTheme.typography.body1
+//                    )
+//                    Text(
+//                        text = description,
+//                        color = Color.Gray,
+//                        style = MaterialTheme.typography.caption
+//                    )
+//                }
+//
+//                Switch(
+//                    checked = isEnabled,
+//                    onCheckedChange = onToggle,
+//                    colors = SwitchDefaults.colors(
+//                        checkedThumbColor = Gold,
+//                        checkedTrackColor = Gold.copy(alpha = 0.5f),
+//                        uncheckedThumbColor = Color.Gray,
+//                        uncheckedTrackColor = Color.DarkGray
+//                    )
+//                )
+//            }
+//        }
+//    }
+
+//    @Composable
+//    fun TimeoutSettingCard(
+//        timeout: Int,
+//        onTimeoutChanged: (Int) -> Unit
+//    ) {
+//        Card(
+//            modifier = Modifier.fillMaxWidth(),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Column(
+//                modifier = Modifier.padding(16.dp)
+//            ) {
+//                Text(
+//                    text = "API Timeout",
+//                    color = Color.White,
+//                    style = MaterialTheme.typography.body1,
+//                    fontWeight = FontWeight.Bold
+//                )
+//
+//                Text(
+//                    text = "Request timeout in seconds",
+//                    color = Color.Gray,
+//                    style = MaterialTheme.typography.caption
+//                )
+//
+//                Spacer(modifier = Modifier.height(12.dp))
+//
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    horizontalArrangement = Arrangement.SpaceBetween,
+//                    verticalAlignment = Alignment.CenterVertically
+//                ) {
+//                    Button(
+//                        onClick = { onTimeoutChanged(maxOf(60, timeout - 60)) },
+//                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
+//                    ) {
+//                        Text("-", color = Color.White)
+//                    }
+//
+//                    Text(
+//                        text = "${timeout}s",
+//                        color = Gold,
+//                        style = MaterialTheme.typography.h6
+//                    )
+//
+//                    Button(
+//                        onClick = { onTimeoutChanged(minOf(1200, timeout + 60)) },
+//                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
+//                    ) {
+//                        Text("+", color = Color.White)
+//                    }
+//                }
+//            }
+//        }
+//    }
+
+//    @Composable
+//    fun NumberSettingCard(
+//        title: String,
+//        description: String,
+//        value: Int,
+//        range: IntRange,
+//        step: Int,
+//        onValueChanged: (Int) -> Unit
+//    ) {
+//        Card(
+//            modifier = Modifier.fillMaxWidth(),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Column(
+//                modifier = Modifier.padding(16.dp)
+//            ) {
+//                Text(
+//                    text = title,
+//                    color = Color.White,
+//                    style = MaterialTheme.typography.body1,
+//                    fontWeight = FontWeight.Bold
+//                )
+//
+//                Text(
+//                    text = description,
+//                    color = Color.Gray,
+//                    style = MaterialTheme.typography.caption
+//                )
+//
+//                Spacer(modifier = Modifier.height(12.dp))
+//
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    horizontalArrangement = Arrangement.SpaceBetween,
+//                    verticalAlignment = Alignment.CenterVertically
+//                ) {
+//                    Button(
+//                        onClick = { onValueChanged(maxOf(range.first, value - step)) },
+//                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
+//                    ) {
+//                        Text("-", color = Color.White)
+//                    }
+//
+//                    Text(
+//                        text = "$value",
+//                        color = Gold,
+//                        style = MaterialTheme.typography.h6
+//                    )
+//
+//                    Button(
+//                        onClick = { onValueChanged(minOf(range.last, value + step)) },
+//                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
+//                    ) {
+//                        Text("+", color = Color.White)
+//                    }
+//                }
+//            }
+//        }
+//    }
 
     // Network Details Screen Composable
-    @Composable
-    fun NetworkDetailsScreen(
-        host: String,
-        connectivityResults: List<ConnectivityResult>,
-        isTestRunning: Boolean,
-        onClose: () -> Unit,
-        onRunTest: () -> Unit
-    ) {
-        val scrollState = rememberLazyListState()
+//    @Composable
+//    fun NetworkDetailsScreen(
+//        host: String,
+//        connectivityResults: List<ConnectivityResult>,
+//        isTestRunning: Boolean,
+//        onClose: () -> Unit,
+//        onRunTest: () -> Unit
+//    ) {
+//        val scrollState = rememberLazyListState()
+//
+//        Column(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .background(Navy)
+//                .padding(16.dp)
+//        ) {
+//            // Header
+//            Row(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(bottom = 16.dp),
+//                horizontalArrangement = Arrangement.SpaceBetween,
+//                verticalAlignment = Alignment.CenterVertically
+//            ) {
+//                Column {
+//                    Text(
+//                        text = "Network Connectivity",
+//                        color = Gold,
+//                        style = MaterialTheme.typography.h6
+//                    )
+//                    Text(
+//                        text = "Target: $host:5555",
+//                        color = LightBlue,
+//                        style = MaterialTheme.typography.caption
+//                    )
+//                }
+//
+//                Row {
+//                    // Test button
+//                    Button(
+//                        onClick = onRunTest,
+//                        enabled = !isTestRunning,
+//                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
+//                        modifier = Modifier.padding(end = 8.dp)
+//                    ) {
+//                        if (isTestRunning) {
+//                            CircularProgressIndicator(
+//                                modifier = Modifier.size(16.dp),
+//                                color = Color.White,
+//                                strokeWidth = 2.dp
+//                            )
+//                        } else {
+//                            Text("Test", color = Color.White)
+//                        }
+//                    }
+//
+//                    // Close button
+//                    Button(
+//                        onClick = onClose,
+//                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
+//                    ) {
+//                        Text("Close", color = Color.White)
+//                    }
+//                }
+//            }
+//
+//            Divider(color = LightBlue, thickness = 1.dp)
+//
+//            // Current Status Summary
+//            if (connectivityResults.isNotEmpty()) {
+//                val latestResult = connectivityResults.first()
+//
+//                Card(
+//                    modifier = Modifier
+//                        .fillMaxWidth()
+//                        .padding(vertical = 8.dp),
+//                    backgroundColor = if (latestResult.isHostReachable && latestResult.isPortOpen)
+//                        Color.Green.copy(alpha = 0.1f) else Color.Red.copy(alpha = 0.1f)
+//                ) {
+//                    Column(
+//                        modifier = Modifier.padding(16.dp)
+//                    ) {
+//                        Text(
+//                            text = "Current Status",
+//                            color = Gold,
+//                            style = MaterialTheme.typography.subtitle1,
+//                            fontWeight = FontWeight.Bold
+//                        )
+//
+//                        Spacer(modifier = Modifier.height(8.dp))
+//
+//                        Row(
+//                            modifier = Modifier.fillMaxWidth(),
+//                            horizontalArrangement = Arrangement.SpaceBetween
+//                        ) {
+//                            StatusIndicator("Host Reachable", latestResult.isHostReachable)
+//                            StatusIndicator("Port Open", latestResult.isPortOpen)
+//                        }
+//
+//                        Spacer(modifier = Modifier.height(8.dp))
+//
+//                        Text(
+//                            text = "Response Time: ${latestResult.responseTime}ms",
+//                            color = LightBlue,
+//                            style = MaterialTheme.typography.body2
+//                        )
+//
+//                        Text(
+//                            text = "Last Tested: ${formatTimestamp(latestResult.timestamp)}",
+//                            color = Color.Gray,
+//                            style = MaterialTheme.typography.caption
+//                        )
+//
+//                        if (latestResult.errorMessage != null) {
+//                            Text(
+//                                text = "Error: ${latestResult.errorMessage}",
+//                                color = Color.Red,
+//                                style = MaterialTheme.typography.caption,
+//                                modifier = Modifier.padding(top = 4.dp)
+//                            )
+//                        }
+//                    }
+//                }
+//            }
+//
+//            // Test History
+//            Text(
+//                text = "Test History (${connectivityResults.size})",
+//                color = Gold,
+//                style = MaterialTheme.typography.subtitle1,
+//                modifier = Modifier.padding(vertical = 8.dp)
+//            )
+//
+//            Divider(color = LightBlue, thickness = 0.5.dp)
+//
+//            // Results list
+//            LazyColumn(
+//                modifier = Modifier
+//                    .fillMaxSize()
+//                    .weight(1f),
+//                state = scrollState
+//            ) {
+//                items(connectivityResults) { result ->
+//                    ConnectivityResultItem(result)
+//                }
+//
+//                if (connectivityResults.isEmpty()) {
+//                    item {
+//                        Box(
+//                            modifier = Modifier
+//                                .fillMaxWidth()
+//                                .padding(32.dp),
+//                            contentAlignment = Alignment.Center
+//                        ) {
+//                            Text(
+//                                text = "No test results yet.\nClick 'Test' to run connectivity check.",
+//                                color = Color.Gray,
+//                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+//                            )
+//                        }
+//                    }
+//                }
+//            }
+//
+//            // Statistics if we have results
+//            if (connectivityResults.isNotEmpty()) {
+//                Divider(color = LightBlue, thickness = 0.5.dp)
+//
+//                ConnectivityStats(connectivityResults)
+//            }
+//        }
+//    }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Navy)
-                .padding(16.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Network Connectivity",
-                        color = Gold,
-                        style = MaterialTheme.typography.h6
-                    )
-                    Text(
-                        text = "Target: $host:5555",
-                        color = LightBlue,
-                        style = MaterialTheme.typography.caption
-                    )
-                }
+//    @Composable
+//    fun StatusIndicator(label: String, status: Boolean) {
+//        Column(
+//            horizontalAlignment = Alignment.CenterHorizontally
+//        ) {
+//            Icon(
+//                imageVector = if (status) Icons.Default.CheckCircle else Icons.Default.Close,
+//                contentDescription = null,
+//                tint = if (status) Color.Green else Color.Red,
+//                modifier = Modifier.size(24.dp)
+//            )
+//            Text(
+//                text = label,
+//                color = if (status) Color.Green else Color.Red,
+//                style = MaterialTheme.typography.caption,
+//                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+//            )
+//        }
+//    }
 
-                Row {
-                    // Test button
-                    Button(
-                        onClick = onRunTest,
-                        enabled = !isTestRunning,
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        if (isTestRunning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Test", color = Color.White)
-                        }
-                    }
+//    @Composable
+//    fun ConnectivityResultItem(result: ConnectivityResult) {
+//        val overallStatus = result.isHostReachable && result.isPortOpen
+//
+//        Column(
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .background(
+//                    if (overallStatus) Color.Green.copy(alpha = 0.05f)
+//                    else Color.Red.copy(alpha = 0.05f)
+//                )
+//                .padding(vertical = 8.dp, horizontal = 12.dp)
+//        ) {
+//            Row(
+//                modifier = Modifier.fillMaxWidth(),
+//                horizontalArrangement = Arrangement.SpaceBetween,
+//                verticalAlignment = Alignment.CenterVertically
+//            ) {
+//                Text(
+//                    text = formatTimestamp(result.timestamp),
+//                    color = Color.Gray,
+//                    fontSize = 10.sp,
+//                    fontFamily = FontFamily.Monospace
+//                )
+//
+//                Text(
+//                    text = "${result.responseTime}ms",
+//                    color = when {
+//                        result.responseTime < 100 -> Color.Green
+//                        result.responseTime < 500 -> Color.Yellow
+//                        else -> Color.Red
+//                    },
+//                    fontSize = 10.sp,
+//                    fontFamily = FontFamily.Monospace
+//                )
+//            }
+//
+//            Row(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(top = 4.dp),
+//                horizontalArrangement = Arrangement.SpaceBetween
+//            ) {
+//                Text(
+//                    text = "Host: ${if (result.isHostReachable) "✓" else "✗"}",
+//                    color = if (result.isHostReachable) Color.Green else Color.Red,
+//                    fontSize = 12.sp
+//                )
+//
+//                Text(
+//                    text = "Port ${result.portNumber}: ${if (result.isPortOpen) "✓" else "✗"}",
+//                    color = if (result.isPortOpen) Color.Green else Color.Red,
+//                    fontSize = 12.sp
+//                )
+//            }
+//
+//            if (result.errorMessage != null) {
+//                Text(
+//                    text = "Error: ${result.errorMessage}",
+//                    color = Color.Red,
+//                    fontSize = 10.sp,
+//                    modifier = Modifier.padding(top = 2.dp)
+//                )
+//            }
+//        }
+//
+//        Divider(
+//            color = Color.DarkGray,
+//            thickness = 0.5.dp
+//        )
+//    }
 
-                    // Close button
-                    Button(
-                        onClick = onClose,
-                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
-                    ) {
-                        Text("Close", color = Color.White)
-                    }
-                }
-            }
+//    @Composable
+//    fun ConnectivityStats(results: List<ConnectivityResult>) {
+//        if (results.isEmpty()) return
+//
+//        val successfulTests = results.count { it.isHostReachable && it.isPortOpen }
+//        val successRate = (successfulTests.toFloat() / results.size * 100).toInt()
+//        val avgResponseTime = results.map { it.responseTime }.average().toLong()
+//        val minResponseTime = results.minOf { it.responseTime }
+//        val maxResponseTime = results.maxOf { it.responseTime }
+//
+//        Card(
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .padding(vertical = 8.dp),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Column(
+//                modifier = Modifier.padding(12.dp)
+//            ) {
+//                Text(
+//                    text = "Statistics",
+//                    color = Gold,
+//                    style = MaterialTheme.typography.subtitle2,
+//                    fontWeight = FontWeight.Bold
+//                )
+//
+//                Spacer(modifier = Modifier.height(8.dp))
+//
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    horizontalArrangement = Arrangement.SpaceBetween
+//                ) {
+//                    StatItem("Success Rate", "$successRate%")
+//                    StatItem("Avg Response", "${avgResponseTime}ms")
+//                }
+//
+//                Spacer(modifier = Modifier.height(4.dp))
+//
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    horizontalArrangement = Arrangement.SpaceBetween
+//                ) {
+//                    StatItem("Min Response", "${minResponseTime}ms")
+//                    StatItem("Max Response", "${maxResponseTime}ms")
+//                }
+//            }
+//        }
+//    }
 
-            Divider(color = LightBlue, thickness = 1.dp)
-
-            // Current Status Summary
-            if (connectivityResults.isNotEmpty()) {
-                val latestResult = connectivityResults.first()
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    backgroundColor = if (latestResult.isHostReachable && latestResult.isPortOpen)
-                        Color.Green.copy(alpha = 0.1f) else Color.Red.copy(alpha = 0.1f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            text = "Current Status",
-                            color = Gold,
-                            style = MaterialTheme.typography.subtitle1,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            StatusIndicator("Host Reachable", latestResult.isHostReachable)
-                            StatusIndicator("Port Open", latestResult.isPortOpen)
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "Response Time: ${latestResult.responseTime}ms",
-                            color = LightBlue,
-                            style = MaterialTheme.typography.body2
-                        )
-
-                        Text(
-                            text = "Last Tested: ${formatTimestamp(latestResult.timestamp)}",
-                            color = Color.Gray,
-                            style = MaterialTheme.typography.caption
-                        )
-
-                        if (latestResult.errorMessage != null) {
-                            Text(
-                                text = "Error: ${latestResult.errorMessage}",
-                                color = Color.Red,
-                                style = MaterialTheme.typography.caption,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Test History
-            Text(
-                text = "Test History (${connectivityResults.size})",
-                color = Gold,
-                style = MaterialTheme.typography.subtitle1,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            Divider(color = LightBlue, thickness = 0.5.dp)
-
-            // Results list
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                state = scrollState
-            ) {
-                items(connectivityResults) { result ->
-                    ConnectivityResultItem(result)
-                }
-
-                if (connectivityResults.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No test results yet.\nClick 'Test' to run connectivity check.",
-                                color = Color.Gray,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Statistics if we have results
-            if (connectivityResults.isNotEmpty()) {
-                Divider(color = LightBlue, thickness = 0.5.dp)
-
-                ConnectivityStats(connectivityResults)
-            }
-        }
-    }
-
-    @Composable
-    fun StatusIndicator(label: String, status: Boolean) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = if (status) Icons.Default.CheckCircle else Icons.Default.Close,
-                contentDescription = null,
-                tint = if (status) Color.Green else Color.Red,
-                modifier = Modifier.size(24.dp)
-            )
-            Text(
-                text = label,
-                color = if (status) Color.Green else Color.Red,
-                style = MaterialTheme.typography.caption,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-        }
-    }
-
-    @Composable
-    fun ConnectivityResultItem(result: ConnectivityResult) {
-        val overallStatus = result.isHostReachable && result.isPortOpen
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    if (overallStatus) Color.Green.copy(alpha = 0.05f)
-                    else Color.Red.copy(alpha = 0.05f)
-                )
-                .padding(vertical = 8.dp, horizontal = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = formatTimestamp(result.timestamp),
-                    color = Color.Gray,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Text(
-                    text = "${result.responseTime}ms",
-                    color = when {
-                        result.responseTime < 100 -> Color.Green
-                        result.responseTime < 500 -> Color.Yellow
-                        else -> Color.Red
-                    },
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Host: ${if (result.isHostReachable) "✓" else "✗"}",
-                    color = if (result.isHostReachable) Color.Green else Color.Red,
-                    fontSize = 12.sp
-                )
-
-                Text(
-                    text = "Port ${result.portNumber}: ${if (result.isPortOpen) "✓" else "✗"}",
-                    color = if (result.isPortOpen) Color.Green else Color.Red,
-                    fontSize = 12.sp
-                )
-            }
-
-            if (result.errorMessage != null) {
-                Text(
-                    text = "Error: ${result.errorMessage}",
-                    color = Color.Red,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-        }
-
-        Divider(
-            color = Color.DarkGray,
-            thickness = 0.5.dp
-        )
-    }
-
-    @Composable
-    fun ConnectivityStats(results: List<ConnectivityResult>) {
-        if (results.isEmpty()) return
-
-        val successfulTests = results.count { it.isHostReachable && it.isPortOpen }
-        val successRate = (successfulTests.toFloat() / results.size * 100).toInt()
-        val avgResponseTime = results.map { it.responseTime }.average().toLong()
-        val minResponseTime = results.minOf { it.responseTime }
-        val maxResponseTime = results.maxOf { it.responseTime }
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp)
-            ) {
-                Text(
-                    text = "Statistics",
-                    color = Gold,
-                    style = MaterialTheme.typography.subtitle2,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    StatItem("Success Rate", "$successRate%")
-                    StatItem("Avg Response", "${avgResponseTime}ms")
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    StatItem("Min Response", "${minResponseTime}ms")
-                    StatItem("Max Response", "${maxResponseTime}ms")
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun StatItem(label: String, value: String) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = value,
-                color = LightBlue,
-                style = MaterialTheme.typography.body2,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = label,
-                color = Color.Gray,
-                style = MaterialTheme.typography.caption
-            )
-        }
-    }
+//    @Composable
+//    fun StatItem(label: String, value: String) {
+//        Column(
+//            horizontalAlignment = Alignment.CenterHorizontally
+//        ) {
+//            Text(
+//                text = value,
+//                color = LightBlue,
+//                style = MaterialTheme.typography.body2,
+//                fontWeight = FontWeight.Bold
+//            )
+//            Text(
+//                text = label,
+//                color = Color.Gray,
+//                style = MaterialTheme.typography.caption
+//            )
+//        }
+//    }
 
     // Now, update the DrawerContent function to include RAG Data option
     @Composable
@@ -2673,179 +2728,179 @@ class MainActivity : ComponentActivity() {
 
     // Text to Speech related
     // Add these new composable functions
-    @Composable
-    fun SliderSettingCard(
-        title: String,
-        description: String,
-        value: Float,
-        range: ClosedFloatingPointRange<Float>,
-        steps: Int,
-        onValueChanged: (Float) -> Unit
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold
-                )
+//    @Composable
+//    fun SliderSettingCard(
+//        title: String,
+//        description: String,
+//        value: Float,
+//        range: ClosedFloatingPointRange<Float>,
+//        steps: Int,
+//        onValueChanged: (Float) -> Unit
+//    ) {
+//        Card(
+//            modifier = Modifier.fillMaxWidth(),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Column(
+//                modifier = Modifier.padding(16.dp)
+//            ) {
+//                Text(
+//                    text = title,
+//                    color = Color.White,
+//                    style = MaterialTheme.typography.body1,
+//                    fontWeight = FontWeight.Bold
+//                )
+//
+//                Text(
+//                    text = description,
+//                    color = Color.Gray,
+//                    style = MaterialTheme.typography.caption
+//                )
+//
+//                Spacer(modifier = Modifier.height(12.dp))
+//
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    verticalAlignment = Alignment.CenterVertically
+//                ) {
+//                    Text(
+//                        text = String.format("%.2f", range.start),
+//                        color = Color.Gray,
+//                        style = MaterialTheme.typography.caption,
+//                        modifier = Modifier.width(32.dp)
+//                    )
+//
+//                    Slider(
+//                        value = value,
+//                        onValueChange = onValueChanged,
+//                        valueRange = range,
+//                        steps = steps,
+//                        colors = SliderDefaults.colors(
+//                            thumbColor = Gold,
+//                            activeTrackColor = Gold,
+//                            inactiveTrackColor = Color.Gray
+//                        ),
+//                        modifier = Modifier.weight(1f)
+//                    )
+//
+//                    Text(
+//                        text = String.format("%.2f", range.endInclusive),
+//                        color = Color.Gray,
+//                        style = MaterialTheme.typography.caption,
+//                        modifier = Modifier.width(32.dp)
+//                    )
+//                }
+//
+//                Text(
+//                    text = "Current: ${String.format("%.2f", value)}",
+//                    color = Gold,
+//                    style = MaterialTheme.typography.body2,
+//                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+//                    modifier = Modifier.fillMaxWidth()
+//                )
+//            }
+//        }
+//    }
 
-                Text(
-                    text = description,
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.caption
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = String.format("%.2f", range.start),
-                        color = Color.Gray,
-                        style = MaterialTheme.typography.caption,
-                        modifier = Modifier.width(32.dp)
-                    )
-
-                    Slider(
-                        value = value,
-                        onValueChange = onValueChanged,
-                        valueRange = range,
-                        steps = steps,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Gold,
-                            activeTrackColor = Gold,
-                            inactiveTrackColor = Color.Gray
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Text(
-                        text = String.format("%.2f", range.endInclusive),
-                        color = Color.Gray,
-                        style = MaterialTheme.typography.caption,
-                        modifier = Modifier.width(32.dp)
-                    )
-                }
-
-                Text(
-                    text = "Current: ${String.format("%.2f", value)}",
-                    color = Gold,
-                    style = MaterialTheme.typography.body2,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
-
-    @Composable
-    fun DropdownSettingCard(
-        title: String,
-        description: String,
-        selectedValue: String,
-        options: List<Pair<String, String>>, // value to display name
-        onSelectionChanged: (String) -> Unit
-    ) {
-        var expanded by remember { mutableStateOf(false) }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color.Black.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = description,
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.caption
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Box(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedButton(
-                        onClick = { expanded = true },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            backgroundColor = Color.Blue,
-                            contentColor = Gold
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        // Fix: Handle empty options list
-                        val displayText = when {
-                            options.isEmpty() -> "No options available"
-                            selectedValue.isEmpty() -> "Select ${title.lowercase()}"
-                            else -> options.find { it.first == selectedValue }?.second ?: "Default Voice"
-                        }
-
-                        Text(
-                            text = displayText,
-                            modifier = Modifier.weight(1f),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Start
-                        )
-                        Text("▼", color = Gold)
-                    }
-
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Navy) // Set background to Navy blue
-                    ) {
-                        options.forEach { (value, displayName) ->
-                            DropdownMenuItem(
-                                onClick = {
-                                    onSelectionChanged(value)
-                                    expanded = false
-                                },
-                                modifier = Modifier.background(
-                                    if (value == selectedValue) LightBlue.copy(alpha = 0.3f) else Color.Transparent
-                                )
-                            ) {
-                                Text(
-                                    text = displayName,
-                                    color = if (value == selectedValue) Gold else Color.White
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Fix: Show selected value only if we have options
-                if (selectedValue.isNotEmpty() && options.isNotEmpty()) {
-                    val selectedDisplay = options.find { it.first == selectedValue }?.second
-                    if (selectedDisplay != null) {
-                        Text(
-                            text = "Selected: $selectedDisplay",
-                            color = Gold,
-                            style = MaterialTheme.typography.caption,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
+//    @Composable
+//    fun DropdownSettingCard(
+//        title: String,
+//        description: String,
+//        selectedValue: String,
+//        options: List<Pair<String, String>>, // value to display name
+//        onSelectionChanged: (String) -> Unit
+//    ) {
+//        var expanded by remember { mutableStateOf(false) }
+//
+//        Card(
+//            modifier = Modifier.fillMaxWidth(),
+//            backgroundColor = Color.Black.copy(alpha = 0.3f)
+//        ) {
+//            Column(
+//                modifier = Modifier.padding(16.dp)
+//            ) {
+//                Text(
+//                    text = title,
+//                    color = Color.White,
+//                    style = MaterialTheme.typography.body1,
+//                    fontWeight = FontWeight.Bold
+//                )
+//
+//                Text(
+//                    text = description,
+//                    color = Color.Gray,
+//                    style = MaterialTheme.typography.caption
+//                )
+//
+//                Spacer(modifier = Modifier.height(12.dp))
+//
+//                Box(
+//                    modifier = Modifier.fillMaxWidth()
+//                ) {
+//                    OutlinedButton(
+//                        onClick = { expanded = true },
+//                        colors = ButtonDefaults.outlinedButtonColors(
+//                            backgroundColor = Color.Blue,
+//                            contentColor = Gold
+//                        ),
+//                        modifier = Modifier.fillMaxWidth()
+//                    ) {
+//                        // Fix: Handle empty options list
+//                        val displayText = when {
+//                            options.isEmpty() -> "No options available"
+//                            selectedValue.isEmpty() -> "Select ${title.lowercase()}"
+//                            else -> options.find { it.first == selectedValue }?.second ?: "Default Voice"
+//                        }
+//
+//                        Text(
+//                            text = displayText,
+//                            modifier = Modifier.weight(1f),
+//                            textAlign = androidx.compose.ui.text.style.TextAlign.Start
+//                        )
+//                        Text("▼", color = Gold)
+//                    }
+//
+//                    DropdownMenu(
+//                        expanded = expanded,
+//                        onDismissRequest = { expanded = false },
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .background(Navy) // Set background to Navy blue
+//                    ) {
+//                        options.forEach { (value, displayName) ->
+//                            DropdownMenuItem(
+//                                onClick = {
+//                                    onSelectionChanged(value)
+//                                    expanded = false
+//                                },
+//                                modifier = Modifier.background(
+//                                    if (value == selectedValue) LightBlue.copy(alpha = 0.3f) else Color.Transparent
+//                                )
+//                            ) {
+//                                Text(
+//                                    text = displayName,
+//                                    color = if (value == selectedValue) Gold else Color.White
+//                                )
+//                            }
+//                        }
+//                    }
+//                }
+//
+//                // Fix: Show selected value only if we have options
+//                if (selectedValue.isNotEmpty() && options.isNotEmpty()) {
+//                    val selectedDisplay = options.find { it.first == selectedValue }?.second
+//                    if (selectedDisplay != null) {
+//                        Text(
+//                            text = "Selected: $selectedDisplay",
+//                            color = Gold,
+//                            style = MaterialTheme.typography.caption,
+//                            modifier = Modifier.padding(top = 4.dp)
+//                        )
+//                    }
+//                }
+//            }
+//        }
+//    }
 
     // Each model in open-webui has an associated chat-id for ease of configuration
     private fun getChatIdForModel(model: String): String {
@@ -3452,162 +3507,162 @@ class MainActivity : ComponentActivity() {
     }*/
 
     // Now, create a RAG Data screen component
-    @Composable
-    fun RagDataScreen(
-        chatState: MutableState<ChatState>,
-        onClose: () -> Unit
-    ) {
-        // Log RagFile details when screen is displayed
-        LaunchedEffect(Unit) {
-            LogManager.i(TAG, "RagDataScreen: Displaying ${chatState.value.ragFiles.size} RagFile objects")
-            chatState.value.ragFiles.forEachIndexed { index, ragFile ->
-                LogManager.i(TAG, "RagFile[$index]: id='${ragFile.id}', displayName='${ragFile.displayName}', " +
-                        "url='${ragFile.url}', isSelected=${ragFile.isSelected}")
-            }
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Navy)
-                .padding(16.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "RAG Data Selection",
-                    color = Gold,
-                    style = MaterialTheme.typography.h6
-                )
-
-                Button(
-                    onClick = onClose,
-                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
-                ) {
-                    Text("Done", color = Color.White)
-                }
-            }
-
-            Divider(color = LightBlue, thickness = 1.dp)
-
-            // Select/Deselect All buttons
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Button(
-                    onClick = {
-                        chatState.value = chatState.value.copy(
-                            ragFiles = chatState.value.ragFiles.map { it.copy(isSelected = true) }
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-                ) {
-                    Text("Select All", color = Color.White)
-                }
-
-                Button(
-                    onClick = {
-                        chatState.value = chatState.value.copy(
-                            ragFiles = chatState.value.ragFiles.map { it.copy(isSelected = false) }
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-                ) {
-                    Text("Deselect All", color = Color.White)
-                }
-            }
-
-            Divider(color = LightBlue, thickness = 1.dp)
-
-            // File list with checkboxes
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                items(chatState.value.ragFiles) { ragFile ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable {
-                                // Toggle the selection status
-                                val updatedFiles = chatState.value.ragFiles.map {
-                                    if (it.id == ragFile.id) {
-                                        it.copy(isSelected = !it.isSelected)
-                                    } else {
-                                        it
-                                    }
-                                }
-                                chatState.value = chatState.value.copy(ragFiles = updatedFiles)
-                            },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = ragFile.isSelected,
-                            onCheckedChange = { isChecked ->
-                                val updatedFiles = chatState.value.ragFiles.map {
-                                    if (it.id == ragFile.id) {
-                                        it.copy(isSelected = isChecked)
-                                    } else {
-                                        it
-                                    }
-                                }
-                                chatState.value = chatState.value.copy(ragFiles = updatedFiles)
-                            },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = Gold,
-                                uncheckedColor = LightBlue,
-                                checkmarkColor = Navy
-                            )
-                        )
-
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 8.dp)
-                        ) {
-                            Text(
-                                text = ragFile.displayName,
-                                color = Gold
-                            )
-                            Text(
-                                text = ragFile.id,
-                                color = Color.Gray,
-                                style = MaterialTheme.typography.caption
-                            )
-                            // Display URL only if it exists
-                            if (!ragFile.url.isNullOrEmpty()) {
-                                Text(
-                                    text = ragFile.url,
-                                    color = LightBlue,
-                                    style = MaterialTheme.typography.caption
-                                )
-                            }
-                        }
-                    }
-
-                    Divider(color = Color.DarkGray, thickness = 0.5.dp)
-                }
-            }
-
-            // Status text showing selected file count
-            val selectedCount = chatState.value.ragFiles.count { it.isSelected }
-            Text(
-                text = "$selectedCount of ${chatState.value.ragFiles.size} files selected",
-                color = Gold,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
+//    @Composable
+//    fun RagDataScreen(
+//        chatState: MutableState<ChatState>,
+//        onClose: () -> Unit
+//    ) {
+//        // Log RagFile details when screen is displayed
+//        LaunchedEffect(Unit) {
+//            LogManager.i(TAG, "RagDataScreen: Displaying ${chatState.value.ragFiles.size} RagFile objects")
+//            chatState.value.ragFiles.forEachIndexed { index, ragFile ->
+//                LogManager.i(TAG, "RagFile[$index]: id='${ragFile.id}', displayName='${ragFile.displayName}', " +
+//                        "url='${ragFile.url}', isSelected=${ragFile.isSelected}")
+//            }
+//        }
+//        Column(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .background(Navy)
+//                .padding(16.dp)
+//        ) {
+//            // Header
+//            Row(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(bottom = 16.dp),
+//                horizontalArrangement = Arrangement.SpaceBetween,
+//                verticalAlignment = Alignment.CenterVertically
+//            ) {
+//                Text(
+//                    text = "RAG Data Selection",
+//                    color = Gold,
+//                    style = MaterialTheme.typography.h6
+//                )
+//
+//                Button(
+//                    onClick = onClose,
+//                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
+//                ) {
+//                    Text("Done", color = Color.White)
+//                }
+//            }
+//
+//            Divider(color = LightBlue, thickness = 1.dp)
+//
+//            // Select/Deselect All buttons
+//            Row(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(vertical = 8.dp),
+//                horizontalArrangement = Arrangement.SpaceBetween
+//            ) {
+//                Button(
+//                    onClick = {
+//                        chatState.value = chatState.value.copy(
+//                            ragFiles = chatState.value.ragFiles.map { it.copy(isSelected = true) }
+//                        )
+//                    },
+//                    colors = ButtonDefaults.buttonColors(backgroundColor = Green)
+//                ) {
+//                    Text("Select All", color = Color.White)
+//                }
+//
+//                Button(
+//                    onClick = {
+//                        chatState.value = chatState.value.copy(
+//                            ragFiles = chatState.value.ragFiles.map { it.copy(isSelected = false) }
+//                        )
+//                    },
+//                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
+//                ) {
+//                    Text("Deselect All", color = Color.White)
+//                }
+//            }
+//
+//            Divider(color = LightBlue, thickness = 1.dp)
+//
+//            // File list with checkboxes
+//            LazyColumn(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .weight(1f)
+//            ) {
+//                items(chatState.value.ragFiles) { ragFile ->
+//                    Row(
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .padding(vertical = 8.dp)
+//                            .clickable {
+//                                // Toggle the selection status
+//                                val updatedFiles = chatState.value.ragFiles.map {
+//                                    if (it.id == ragFile.id) {
+//                                        it.copy(isSelected = !it.isSelected)
+//                                    } else {
+//                                        it
+//                                    }
+//                                }
+//                                chatState.value = chatState.value.copy(ragFiles = updatedFiles)
+//                            },
+//                        verticalAlignment = Alignment.CenterVertically
+//                    ) {
+//                        Checkbox(
+//                            checked = ragFile.isSelected,
+//                            onCheckedChange = { isChecked ->
+//                                val updatedFiles = chatState.value.ragFiles.map {
+//                                    if (it.id == ragFile.id) {
+//                                        it.copy(isSelected = isChecked)
+//                                    } else {
+//                                        it
+//                                    }
+//                                }
+//                                chatState.value = chatState.value.copy(ragFiles = updatedFiles)
+//                            },
+//                            colors = CheckboxDefaults.colors(
+//                                checkedColor = Gold,
+//                                uncheckedColor = LightBlue,
+//                                checkmarkColor = Navy
+//                            )
+//                        )
+//
+//                        Column(
+//                            modifier = Modifier
+//                                .weight(1f)
+//                                .padding(start = 8.dp)
+//                        ) {
+//                            Text(
+//                                text = ragFile.displayName,
+//                                color = Gold
+//                            )
+//                            Text(
+//                                text = ragFile.id,
+//                                color = Color.Gray,
+//                                style = MaterialTheme.typography.caption
+//                            )
+//                            // Display URL only if it exists
+//                            if (!ragFile.url.isNullOrEmpty()) {
+//                                Text(
+//                                    text = ragFile.url,
+//                                    color = LightBlue,
+//                                    style = MaterialTheme.typography.caption
+//                                )
+//                            }
+//                        }
+//                    }
+//
+//                    Divider(color = Color.DarkGray, thickness = 0.5.dp)
+//                }
+//            }
+//
+//            // Status text showing selected file count
+//            val selectedCount = chatState.value.ragFiles.count { it.isSelected }
+//            Text(
+//                text = "$selectedCount of ${chatState.value.ragFiles.size} files selected",
+//                color = Gold,
+//                modifier = Modifier.padding(top = 8.dp)
+//            )
+//        }
+//    }
 
     private fun processResponseWithCitations(responseText: String): String {
         // First, check if the response contains citations in [X] format

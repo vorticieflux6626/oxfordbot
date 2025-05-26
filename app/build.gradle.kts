@@ -74,7 +74,10 @@ dependencies {
 
     // Updated dependencies with current versions
     implementation("androidx.appcompat:appcompat:1.7.0")
+
+    // Need to migrate to material3
     implementation("androidx.compose.material:material:1.8.2")
+
     implementation("androidx.compose.runtime:runtime:1.8.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
