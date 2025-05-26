@@ -2,9 +2,6 @@ package com.example.oxfordbot
 
 // Section to import various elements of project
 import com.example.oxfordbot.ui.theme.*
-//import com.example.oxfordbot.SettingsScreenWithLazyLoading
-//import com.example.oxfordbot.NetworkDetailsScreen
-//import com.example.oxfordbot.RagDataScreen
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
@@ -14,6 +11,7 @@ import android.content.res.Configuration
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -23,6 +21,7 @@ import android.provider.Settings
 import android.util.Log
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.widget.Toast
 import android.Manifest
 import androidx.activity.ComponentActivity
@@ -57,11 +56,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.Badge
-//import androidx.compose.material.Checkbox
-//import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
-//import androidx.compose.material.ButtonDefaults
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.*
@@ -143,10 +139,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // Add this method to request storage permissions
-    // Updated permission request method with proper API checks
-    // Updated permission request method with proper API checks
-    // Then use READ_MEDIA_DOCUMENTS instead of the string literal:
-    // Fix 2: Update requestStoragePermissions to use correct permission constants
     private fun requestStoragePermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
             val permission = Manifest.permission.READ_MEDIA_IMAGES
@@ -166,62 +158,6 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-//    // Simplified version that should work for most cases (Preferred over more extensive version)
-//    private fun requestStoragePermissionsSimple() {
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-//            val permissions = mutableListOf<String>()
-//
-//            // For most Android versions, READ_EXTERNAL_STORAGE is sufficient
-//            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-//                != PackageManager.PERMISSION_GRANTED) {
-//                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-//            }
-//
-//            if (permissions.isNotEmpty()) {
-//                ActivityCompat.requestPermissions(
-//                    this,
-//                    permissions.toTypedArray(),
-//                    STORAGE_PERMISSION_CODE
-//                )
-//            } else {
-//                LogManager.i(TAG, "Storage permission already granted")
-//            }
-//        }
-//    }
-
-    // Fix 1: Update the onRequestPermissionsResult method signature
-    //override fun onRequestPermissionsResult(
-    //    requestCode: Int,
-    //    permissions: Array<String>,  // Changed from Array<out String>
-    //    grantResults: IntArray
-    //) {
-    //    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    //
-    //    when (requestCode) {
-    //        STORAGE_PERMISSION_CODE -> {
-    //            isPermissionRequested = false
-    //
-    //            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-    //                LogManager.i("Permissions", "READ_EXTERNAL_STORAGE permission granted")
-    //                Toast.makeText(this, "Storage permission granted - can now find downloaded PDFs", Toast.LENGTH_SHORT).show()
-    //            } else {
-    //                LogManager.w("Permissions", "READ_EXTERNAL_STORAGE permission denied")
-    //                handlePermissionDenied(Manifest.permission.READ_EXTERNAL_STORAGE)
-    //            }
-    //        }
-    //
-    //        MEDIA_PERMISSION_CODE -> {
-    //            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-    //                LogManager.i("Permissions", "READ_MEDIA_IMAGES permission granted")
-    //                Toast.makeText(this, "Media permission granted - can now find downloaded PDFs", Toast.LENGTH_SHORT).show()
-    //            } else {
-    //                LogManager.w("Permissions", "READ_MEDIA_IMAGES permission denied")
-    //                handlePermissionDenied(Manifest.permission.READ_MEDIA_IMAGES)
-    //            }
-    //        }
-    //    }
-    //}
 
     // Fixed rationale dialog - only shows the system permission dialog
     private fun showPermissionRationale() {
@@ -245,17 +181,6 @@ class MainActivity : ComponentActivity() {
             .setCancelable(false) // Prevent dismissing by tapping outside
             .show()
     }
-
-//    // Helper method to handle permission denial
-//    private fun handlePermissionDenied(permission: String) {
-//        if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
-//            LogManager.w("Permissions", "User selected 'Don't ask again' for $permission")
-//            showPermissionPermanentlyDeniedDialog()
-//        } else {
-//            LogManager.w("Permissions", "User denied $permission but can ask again")
-//            Toast.makeText(this, "Storage permission needed to find downloaded PDFs", Toast.LENGTH_LONG).show()
-//        }
-//    }
 
     // Dialog for when permission is permanently denied
     private fun showPermissionPermanentlyDeniedDialog() {
@@ -289,7 +214,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // Updated storage permission check
-    // Fix 3: Update hasStoragePermission to use correct permission constants
     private fun hasStoragePermission(): Boolean {
         return when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
@@ -337,22 +261,31 @@ class MainActivity : ComponentActivity() {
             hostReachable.value = pingHostAsync(SparkOneBrain)
         }
 
+        // Enhanced TTS initialization in onCreate()
         textToSpeech = TextToSpeech(this, TextToSpeech.OnInitListener { status ->
             LogManager.i(TAG, "TTS OnInitListener called with status: $status")
 
             if (status == TextToSpeech.SUCCESS) {
                 LogManager.i(TAG, "TTS initialization successful")
+
+                // ADDED: Set utterance progress listener for debugging
+                textToSpeech?.setOnUtteranceProgressListener(ttsUtteranceListener)
+
                 isTtsInitialized.value = true
 
-                // REMOVE the automatic setup that causes speech
-                // Just set up TTS without the debugging speech
                 coroutineScope.launch {
                     delay(500) // Wait for TTS to be fully ready
-                    setupTtsQuietly() // New function without automatic speech
+                    setupTtsQuietly()
                 }
             } else {
                 LogManager.e(TAG, "TTS initialization failed with status: $status")
                 isTtsInitialized.value = false
+
+                // ADDED: More detailed error reporting
+                when (status) {
+                    TextToSpeech.ERROR -> LogManager.e(TAG, "TTS Error: Generic error")
+                    else -> LogManager.e(TAG, "TTS Error: Unknown status code $status")
+                }
             }
         })
 
@@ -579,7 +512,7 @@ class MainActivity : ComponentActivity() {
         GsonBuilder().setLenient().create()
     }
 
-    // Here's the fully updated handleApiResponse method that processes all response paths
+    // UPDATE your handleApiResponse method to include debugging:
     private fun handleApiResponse(response: ApiResponse) {
         try {
             LogManager.d(TAG, "Raw API response: ${response.response}")
@@ -588,10 +521,6 @@ class MainActivity : ComponentActivity() {
                 // First, check if the response contains choices with message content
                 if (response.choices != null && response.choices.isNotEmpty() && response.choices[0].message?.content != null) {
                     var messageContent = response.choices[0].message!!.content!!
-
-                    // Show thinking if toggled
-                    //val processedContent = processThinkingContent(messageContent)
-
 
                     if (messageContent.isNotEmpty()) {
                         // Process the message content to add citations
@@ -602,7 +531,12 @@ class MainActivity : ComponentActivity() {
                             messages = chatState.value.messages + message,
                             isAnimationVisible = false
                         )
-                        speak(messageContent) // Not adding citations to speech to keep it natural
+
+                        // ADD THIS: Debug TTS state before speaking
+                        debugTtsState("Before speaking chat response")
+
+                        // Use raw messageContent for speech (without citations)
+                        speak(messageContent.trim())
                         return
                     }
                 }
@@ -634,9 +568,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Extract only the part after </think> if it exists
-                //val processedContent = processThinkingContent(messageContent)
-
                 LogManager.d(TAG, "Full processed message content: $messageContent")
 
                 if (messageContent.isNotEmpty()) {
@@ -648,7 +579,12 @@ class MainActivity : ComponentActivity() {
                         messages = chatState.value.messages + message,
                         isAnimationVisible = false
                     )
-                    speak(messageContent) // Not adding citations to speech
+
+                    // ADD THIS: Debug TTS state before speaking
+                    debugTtsState("Before speaking parsed response")
+
+                    // Use raw messageContent for speech (without citations)
+                    speak(messageContent.trim())
                 } else {
                     LogManager.e(TAG, "Received empty message content")
                     handleUnexpectedResponse("Empty response received")
@@ -657,6 +593,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 LogManager.e(TAG, "Error parsing response: ${e.message}")
                 LogManager.e(TAG, "Stack trace: ${Log.getStackTraceString(e)}")
+
                 // Use the raw response if JSON parsing fails
                 var messageContent = response.response.trim()
 
@@ -678,7 +615,12 @@ class MainActivity : ComponentActivity() {
                     messages = chatState.value.messages + message,
                     isAnimationVisible = false
                 )
-                speak(messageContent) // Not adding citations to speech
+
+                // ADD THIS: Debug TTS state before speaking
+                debugTtsState("Before speaking raw response")
+
+                // Use raw messageContent for speech (without citations)
+                speak(messageContent.trim())
             }
         } catch (e: Exception) {
             LogManager.logCaughtException(TAG, "Error processing API response", e)
@@ -702,8 +644,7 @@ class MainActivity : ComponentActivity() {
         speak("An unexpected response was received from the server.")
     }
 
-    // Enhanced speak function with better error handling
-    // 3. Update the speak function to be more explicit about when it should speak
+    // Enhanced speak function with better reliability
     private fun speak(text: String) {
         if (!appSettings.value.enableTTS) {
             LogManager.d(TAG, "TTS is disabled in settings")
@@ -720,33 +661,138 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // Add a check to prevent unwanted speech during setup
-        if (text.contains("Testing voice") || text.contains("test")) {
-            LogManager.d(TAG, "Skipping test speech during setup: $text")
+        // FIXED: Remove overly restrictive filter that blocks legitimate messages
+        // Only skip if it's clearly a test message from setup
+        if (text.startsWith("Testing voice") || text == "This is a test of the selected voice settings.") {
+            LogManager.d(TAG, "Skipping setup test speech: $text")
             return
         }
 
-        try {
-            val utteranceId = UUID.randomUUID().toString()
-            LogManager.d(TAG, "Speaking text: \"${text.take(50)}...\" with utterance ID: $utteranceId")
+        // FIXED: Run TTS on main thread to ensure proper execution
+        coroutineScope.launch(Dispatchers.Main) {
+            try {
+                val utteranceId = UUID.randomUUID().toString()
+                LogManager.d(TAG, "Speaking text: \"${text.take(50)}...\" with utterance ID: $utteranceId")
 
-            // Create parameters bundle for volume control
-            val params = Bundle()
-            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, appSettings.value.ttsVolume)
+                // FIXED: Stop any existing speech and reapply settings before speaking
+                textToSpeech?.stop()
 
-            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, params, utteranceId)
-            } else {
-                // Legacy method
-                val hashParams = HashMap<String, String>()
-                hashParams[TextToSpeech.Engine.KEY_PARAM_VOLUME] = appSettings.value.ttsVolume.toString()
-                textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, hashParams)
+                // Reapply TTS settings to ensure consistency
+                textToSpeech?.let { tts ->
+                    tts.setSpeechRate(appSettings.value.ttsSpeechRate)
+                    tts.setPitch(appSettings.value.ttsPitch)
+                    val locale = parseLocaleString(appSettings.value.ttsLanguage)
+                    tts.setLanguage(locale)
+
+                    // Apply voice if specified (API 21+)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && appSettings.value.ttsVoice.isNotEmpty()) {
+                        val voice = tts.voices?.find { it.name == appSettings.value.ttsVoice }
+                        voice?.let { tts.setVoice(it) }
+                    }
+                }
+
+                // FIXED: Use QUEUE_FLUSH instead of QUEUE_ADD for immediate speech
+                // FIXED: Simplify parameters - volume bundle can cause issues on some devices
+                val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    // Create simplified parameters without volume (let system handle volume)
+                    val params = Bundle()
+                    textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                } else {
+                    // Legacy method without volume parameter
+                    textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null)
+                }
+
+                LogManager.d(TAG, "TTS speak result: $result")
+
+                // Log success/failure
+                when (result) {
+                    TextToSpeech.SUCCESS -> LogManager.i(TAG, "TTS speech queued successfully")
+                    TextToSpeech.ERROR -> LogManager.e(TAG, "TTS speech failed with ERROR")
+                    else -> LogManager.w(TAG, "TTS speech returned unexpected result: $result")
+                }
+
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error during TTS speak", e)
             }
+        }
+    }
 
-            LogManager.d(TAG, "TTS speak result: $result")
+    // Troubleshooting for TTS
+    // Add this to MainActivity class for better TTS monitoring
+    private val ttsUtteranceListener = object : UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) {
+            LogManager.d(TAG, "TTS started speaking utterance: $utteranceId")
+        }
 
-        } catch (e: Exception) {
-            LogManager.logCaughtException(TAG, "Error during TTS speak", e)
+        override fun onDone(utteranceId: String?) {
+            LogManager.d(TAG, "TTS finished speaking utterance: $utteranceId")
+        }
+
+        override fun onError(utteranceId: String?) {
+            LogManager.e(TAG, "TTS error for utterance: $utteranceId")
+        }
+
+        override fun onError(utteranceId: String?, errorCode: Int) {
+            LogManager.e(TAG, "TTS error for utterance: $utteranceId, error code: $errorCode")
+        }
+    }
+
+    // Enhanced debugging function to check TTS state
+    private fun debugTtsState(context: String) {
+        LogManager.i(TAG, "=== TTS State Debug ($context) ===")
+        LogManager.i(TAG, "TTS object exists: ${textToSpeech != null}")
+        LogManager.i(TAG, "TTS initialized: ${isTtsInitialized.value}")
+        LogManager.i(TAG, "TTS enabled in settings: ${appSettings.value.enableTTS}")
+
+        textToSpeech?.let { tts ->
+            try {
+                LogManager.i(TAG, "TTS language: ${tts.language}")
+                LogManager.i(TAG, "TTS speech rate: ${appSettings.value.ttsSpeechRate}")
+                LogManager.i(TAG, "TTS pitch: ${appSettings.value.ttsPitch}")
+                LogManager.i(TAG, "TTS volume setting: ${appSettings.value.ttsVolume}")
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    LogManager.i(TAG, "TTS voice: ${tts.voice?.name ?: "Default"}")
+                    LogManager.i(TAG, "TTS is speaking: ${tts.isSpeaking}")
+                }
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error checking TTS state", e)
+            }
+        }
+        LogManager.i(TAG, "=== End TTS State Debug ===")
+    }
+
+    // Test function to verify TTS is working (call this from settings or debug menu)
+    private fun testTtsWithDifferentMethods() {
+        LogManager.i(TAG, "=== Testing TTS with different methods ===")
+
+        val testText = "Testing TTS functionality"
+
+        coroutineScope.launch(Dispatchers.Main) {
+            try {
+                // Method 1: Simple speak
+                LogManager.i(TAG, "Method 1: Simple speak")
+                textToSpeech?.speak(testText, TextToSpeech.QUEUE_FLUSH, null, "test1")
+
+                delay(3000)
+
+                // Method 2: With bundle parameters
+                LogManager.i(TAG, "Method 2: With bundle parameters")
+                val params = Bundle()
+                textToSpeech?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test2")
+
+                delay(3000)
+
+                // Method 3: Reset TTS and speak
+                LogManager.i(TAG, "Method 3: Reset TTS and speak")
+                textToSpeech?.stop()
+                setupTtsWithSettings()
+                delay(500)
+                textToSpeech?.speak(testText, TextToSpeech.QUEUE_FLUSH, null, "test3")
+
+            } catch (e: Exception) {
+                LogManager.logCaughtException(TAG, "Error in TTS testing", e)
+            }
         }
     }
 
@@ -1677,22 +1723,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Helper function to get model descriptions
-    private fun getModelDescription(model: String): String {
-        return when (model) {
-            "qwen3:8b" -> "Balanced performance and speed (Chat: ${getChatIdForModel(model).take(8)}...)"
-            "qwen3:32b" -> "Large Qwen model with enhanced capabilities (Chat: ${getChatIdForModel(model).take(8)}...)"
-            "deepseek-r1:32b" -> "Large model with enhanced reasoning (Chat: ${getChatIdForModel(model).take(8)}...)"
-            else -> "Unknown model"
-        }
-    }
-
-    // Helper function to format timestamps
-    private fun formatTimestamp(timestamp: Long): String {
-        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-        return sdf.format(Date(timestamp))
-    }
-
     // Replace your openUrlSafely function with this enhanced version
     private fun openUrlSafely(context: Context, urlStr: String) {
         val TAG = "openUrlSafely"
@@ -1882,122 +1912,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-//    // New method using MediaStore API
-//    private fun findFileUsingMediaStore(filename: String): File? {
-//        val TAG = "findFileUsingMediaStore"
-//
-//        try {
-//            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-//                != PackageManager.PERMISSION_GRANTED) {
-//                LogManager.w(TAG, "No READ_EXTERNAL_STORAGE permission")
-//                return null
-//            }
-//
-//            val projection = arrayOf(
-//                MediaStore.Files.FileColumns._ID,
-//                MediaStore.Files.FileColumns.DISPLAY_NAME,
-//                MediaStore.Files.FileColumns.DATA,
-//                MediaStore.Files.FileColumns.SIZE
-//            )
-//
-//            // Get filename without extension for pattern matching
-//            val nameWithoutExt = if (filename.contains('.')) {
-//                filename.substring(0, filename.lastIndexOf('.'))
-//            } else {
-//                filename
-//            }
-//
-//            // Create selection to find files that match our pattern
-//            val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ? OR " +
-//                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
-//            val selectionArgs = arrayOf(filename, "$nameWithoutExt (%).pdf")
-//
-//            val cursor: Cursor? = contentResolver.query(
-//                MediaStore.Files.getContentUri("external"),
-//                projection,
-//                selection,
-//                selectionArgs,
-//                "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC" // Most recent first
-//            )
-//
-//            cursor?.use {
-//                val dataColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
-//                val nameColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-//                val sizeColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
-//
-//                while (cursor.moveToNext()) {
-//                    val filePath = cursor.getString(dataColumnIndex)
-//                    val fileName = cursor.getString(nameColumnIndex)
-//                    val fileSize = cursor.getLong(sizeColumnIndex)
-//
-//                    LogManager.d(TAG, "Found potential match: $fileName at $filePath (${fileSize}KB)")
-//
-//                    val file = File(filePath)
-//                    if (file.exists() && file.canRead()) {
-//                        LogManager.i(TAG, "Verified file exists and is readable: $filePath")
-//                        return file
-//                    }
-//                }
-//            }
-//
-//        } catch (e: Exception) {
-//            LogManager.logCaughtException(TAG, "Error using MediaStore API", e)
-//        }
-//
-//        return null
-//    }
-
-    // Improved direct access method
-    private fun findFileUsingDirectAccess(filename: String): File? {
-        val TAG = "findFileUsingDirectAccess"
-
-        try {
-            val nameWithoutExt = if (filename.contains('.')) {
-                filename.substring(0, filename.lastIndexOf('.'))
-            } else {
-                filename
-            }
-
-            val extension = if (filename.contains('.')) {
-                filename.substring(filename.lastIndexOf('.'))
-            } else {
-                ".pdf"
-            }
-
-            // Check multiple possible download locations
-            val downloadFolders = listOf(
-                // Standard Downloads folder
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                // Alternative Downloads folder
-                File(Environment.getExternalStorageDirectory(), "Download"),
-                // Another common location
-                File("/storage/emulated/0/Download"),
-                // User's Documents folder
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                // App-specific external files directory
-                getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            )
-
-            for (folder in downloadFolders) {
-                if (folder == null || !folder.exists() || !folder.isDirectory) {
-                    continue
-                }
-
-                LogManager.d(TAG, "Searching in: ${folder.absolutePath}")
-
-                val foundFile = searchInFolder(folder, nameWithoutExt, extension)
-                if (foundFile != null) {
-                    return foundFile
-                }
-            }
-
-        } catch (e: Exception) {
-            LogManager.logCaughtException(TAG, "Error in direct access search", e)
-        }
-
-        return null
-    }
-
     // Helper method to search in a specific folder
     private fun searchInFolder(folder: File, nameWithoutExt: String, extension: String): File? {
         val TAG = "searchInFolder"
@@ -2039,27 +1953,6 @@ class MainActivity : ComponentActivity() {
         }
 
         return null
-    }
-
-    // Helper function to extract filename from URL
-    private fun extractFilenameFromUrl(url: String): String? {
-        return try {
-            val urlObj = URL(url)
-            val path = urlObj.path
-            val filename = path.substring(path.lastIndexOf('/') + 1)
-
-            // Make sure it has a reasonable filename
-            if (filename.isNotEmpty() && filename.contains('.')) {
-                LogManager.d("extractFilenameFromUrl", "Extracted filename: $filename")
-                filename
-            } else {
-                LogManager.w("extractFilenameFromUrl", "Invalid filename extracted: $filename")
-                null
-            }
-        } catch (e: Exception) {
-            LogManager.logCaughtException("extractFilenameFromUrl", "Error extracting filename from: $url", e)
-            null
-        }
     }
 
     // Function to open local PDF file
@@ -2329,34 +2222,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun setupTtsWithDebugging() {
-        withContext(Dispatchers.Main) {
-            try {
-                LogManager.i(TAG, "=== Starting TTS Setup and Debugging ===")
-
-                // 1. Test basic TTS functionality
-                testBasicTts()
-
-                // 2. Load and debug languages
-                loadAndDebugLanguages()
-
-                // 3. Load and debug voices
-                loadAndDebugVoices()
-
-                // 4. Apply user settings
-                setupTtsWithSettings()
-
-                // 5. Final test
-                //finalTtsTest()
-
-                LogManager.i(TAG, "=== TTS Setup Complete ===")
-
-            } catch (e: Exception) {
-                LogManager.logCaughtException(TAG, "Error in TTS setup", e)
-            }
-        }
-    }
-
     private fun testBasicTts() {
         textToSpeech?.let { tts ->
             LogManager.i(TAG, "--- Basic TTS Test ---")
@@ -2562,178 +2427,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Simplified voice loading as fallback
-    private fun loadVoicesSimple() {
-        availableVoices.clear()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            textToSpeech?.let { tts ->
-                try {
-                    // Just add a "Default Voice" option if no specific voices found
-                    availableVoices.add(
-                        TtsVoiceInfo(
-                            name = "",
-                            displayName = "Default English Voice",
-                            locale = Locale.US,
-                            quality = android.speech.tts.Voice.QUALITY_NORMAL,
-                            isNetworkConnectionRequired = false
-                        )
-                    )
-
-                    LogManager.i(TAG, "Added default voice option")
-
-                } catch (e: Exception) {
-                    LogManager.logCaughtException(TAG, "Error in simple voice loading", e)
-                }
-            }
-        }
-    }
-
-//    // Improved voice loading - filter for English voices
-//    private fun loadAvailableVoices() {
-//        availableVoices.clear()
-//
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-//            textToSpeech?.let { tts ->
-//                try {
-//                    LogManager.d(TAG, "Loading available voices...")
-//
-//                    val allVoices = tts.voices
-//                    LogManager.d(TAG, "Total voices available: ${allVoices?.size ?: 0}")
-//
-//                    allVoices?.forEach { voice ->
-//                        LogManager.d(TAG, "Found voice: ${voice.name} - ${voice.locale} - Quality: ${voice.quality}")
-//
-//                        // Filter for English voices only
-//                        if (voice.locale.language == "en") {
-//                            val qualityText = when (voice.quality) {
-//                                android.speech.tts.Voice.QUALITY_VERY_HIGH -> "Very High"
-//                                android.speech.tts.Voice.QUALITY_HIGH -> "High"
-//                                android.speech.tts.Voice.QUALITY_NORMAL -> "Normal"
-//                                android.speech.tts.Voice.QUALITY_LOW -> "Low"
-//                                android.speech.tts.Voice.QUALITY_VERY_LOW -> "Very Low"
-//                                else -> "Unknown"
-//                            }
-//
-//                            val networkText = if (voice.isNetworkConnectionRequired) " (Network)" else ""
-//
-//                            availableVoices.add(
-//                                TtsVoiceInfo(
-//                                    name = voice.name,
-//                                    displayName = "${voice.locale.displayName} - ${voice.name} - $qualityText$networkText",
-//                                    locale = voice.locale,
-//                                    quality = voice.quality,
-//                                    isNetworkConnectionRequired = voice.isNetworkConnectionRequired
-//                                )
-//                            )
-//
-//                            LogManager.d(TAG, "Added English voice: ${voice.name} for ${voice.locale}")
-//                        }
-//                    }
-//
-//                    // Sort by display name
-//                    availableVoices.sortBy { it.displayName }
-//                    LogManager.i(TAG, "Loaded ${availableVoices.size} English TTS voices")
-//
-//                    // If no English voices found, log a warning
-//                    if (availableVoices.isEmpty()) {
-//                        LogManager.w(TAG, "No English voices found! User may need to install English TTS data.")
-//
-//                        // Log all available voices for debugging
-//                        allVoices?.forEach { voice ->
-//                            LogManager.w(TAG, "Available voice (non-English): ${voice.name} - ${voice.locale}")
-//                        }
-//                    }
-//
-//                } catch (e: Exception) {
-//                    LogManager.logCaughtException(TAG, "Error loading TTS voices", e)
-//                }
-//            }
-//        } else {
-//            LogManager.i(TAG, "Voice selection not available on Android < 5.0")
-//        }
-//    }
-//
-//    // Add this improved voice loading with better filtering
-//    private fun loadAvailableVoicesImproved() {
-//        availableVoices.clear()
-//
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-//            textToSpeech?.let { tts ->
-//                try {
-//                    LogManager.i(TAG, "Loading available voices (improved)...")
-//
-//                    val allVoices = tts.voices
-//                    LogManager.i(TAG, "Total voices available: ${allVoices?.size ?: 0}")
-//
-//                    if (allVoices == null || allVoices.isEmpty()) {
-//                        LogManager.w(TAG, "No voices available from TTS engine")
-//                        return
-//                    }
-//
-//                    // Get current language setting to prioritize matching voices
-//                    val currentLanguage = parseLocaleString(appSettings.value.ttsLanguage)
-//                    LogManager.i(TAG, "Current language setting: $currentLanguage")
-//
-//                    allVoices.filter { voice ->
-//                        // Filter for English voices
-//                        voice.locale.language.equals("en", ignoreCase = true)
-//                    }.sortedWith(compareBy<android.speech.tts.Voice> { voice ->
-//                        // Sort: matching language/country first, then by quality (higher first), then by name
-//                        when {
-//                            voice.locale == currentLanguage -> 0
-//                            voice.locale.language == currentLanguage.language -> 1
-//                            else -> 2
-//                        }
-//                    }.thenBy { -it.quality }.thenBy { it.name }).forEach { voice ->
-//
-//                        val qualityText = when (voice.quality) {
-//                            android.speech.tts.Voice.QUALITY_VERY_HIGH -> "★★★★★"
-//                            android.speech.tts.Voice.QUALITY_HIGH -> "★★★★"
-//                            android.speech.tts.Voice.QUALITY_NORMAL -> "★★★"
-//                            android.speech.tts.Voice.QUALITY_LOW -> "★★"
-//                            android.speech.tts.Voice.QUALITY_VERY_LOW -> "★"
-//                            else -> "?"
-//                        }
-//
-//                        val networkText = if (voice.isNetworkConnectionRequired) " 🌐" else " 📱"
-//                        val matchText = if (voice.locale == currentLanguage) " ✓" else ""
-//
-//                        // Create a more readable display name
-//                        val voiceName = voice.name.split("#").lastOrNull()?.let {
-//                            it.replace("_", " ").replace("-", " ")
-//                        } ?: voice.name
-//
-//                        availableVoices.add(
-//                            TtsVoiceInfo(
-//                                name = voice.name,
-//                                displayName = "${voice.locale.displayName}$matchText - $voiceName $qualityText$networkText",
-//                                locale = voice.locale,
-//                                quality = voice.quality,
-//                                isNetworkConnectionRequired = voice.isNetworkConnectionRequired
-//                            )
-//                        )
-//
-//                        LogManager.d(TAG, "Added voice: ${voice.name} (${voice.locale}) Quality: ${voice.quality}")
-//                    }
-//
-//                    LogManager.i(TAG, "Loaded ${availableVoices.size} English voices")
-//
-//                    if (availableVoices.isEmpty()) {
-//                        LogManager.w(TAG, "No English voices found!")
-//                        // Log all available voices for debugging
-//                        allVoices.take(10).forEach { voice ->
-//                            LogManager.w(TAG, "Available voice: ${voice.name} (${voice.locale.language}-${voice.locale.country})")
-//                        }
-//                    }
-//
-//                } catch (e: Exception) {
-//                    LogManager.logCaughtException(TAG, "Error loading voices (improved)", e)
-//                }
-//            }
-//        }
-//    }
-
     private fun parseLocaleString(localeString: String): Locale {
         val parts = localeString.split("-", "_")
         return when (parts.size) {
@@ -2744,120 +2437,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun formatLocaleString(locale: Locale): String {
-        return if (locale.country.isNotEmpty()) {
-            "${locale.language}-${locale.country}"
-        } else {
-            locale.language
-        }
-    }
-
-//    // Add a function to check and install TTS data if needed
-//    private fun checkTtsDataAvailability() {
-//        textToSpeech?.let { tts ->
-//            // Check if English is available
-//            val result = tts.isLanguageAvailable(Locale.US)
-//
-//            when (result) {
-//                TextToSpeech.LANG_MISSING_DATA -> {
-//                    LogManager.w(TAG, "TTS data missing - user should install English TTS data")
-//                    // You could show a dialog here to prompt user to install TTS data
-//                    showTtsDataMissingDialog()
-//                }
-//                TextToSpeech.LANG_NOT_SUPPORTED -> {
-//                    LogManager.w(TAG, "English TTS not supported on this device")
-//                }
-//                else -> {
-//                    LogManager.i(TAG, "English TTS is available")
-//                }
-//            }
-//        }
-//    }
-
     private fun showTtsDataMissingDialog() {
         // You can implement this to show a dialog to the user
         LogManager.i(TAG, "Consider showing dialog to install TTS data")
     }
 
-    // Also add a function to force reload voices when settings screen is opened:
-    // In MainActivity, add this to be called when settings screen opens:
-//    private fun refreshTtsData() {
-//        coroutineScope.launch {
-//            if (isTtsInitialized.value) {
-//                LogManager.i(TAG, "Refreshing TTS data for settings")
-//                loadAndDebugLanguages()
-//                loadAndDebugVoices()
-//            }
-//        }
-//    }
-
-//    // Add this function to help debug voice selection
-//    private fun debugCurrentTtsSettings() {
-//        textToSpeech?.let { tts ->
-//            try {
-//                LogManager.i(TAG, "=== Current TTS Settings Debug ===")
-//
-//                // Current language
-//                val currentLanguage = tts.language
-//                LogManager.i(TAG, "Current TTS Language: $currentLanguage")
-//
-//                // Current voice (API 21+)
-//                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-//                    val currentVoice = tts.voice
-//                    if (currentVoice != null) {
-//                        LogManager.i(TAG, "Current TTS Voice: ${currentVoice.name}")
-//                        LogManager.i(TAG, "Voice Locale: ${currentVoice.locale}")
-//                        LogManager.i(TAG, "Voice Quality: ${currentVoice.quality}")
-//                    } else {
-//                        LogManager.w(TAG, "Current TTS Voice: null")
-//                    }
-//                }
-//
-//                // Settings from app
-//                val settings = appSettings.value
-//                LogManager.i(TAG, "App Settings - Language: ${settings.ttsLanguage}")
-//                LogManager.i(TAG, "App Settings - Voice: '${settings.ttsVoice}'")
-//                LogManager.i(TAG, "App Settings - Speech Rate: ${settings.ttsSpeechRate}")
-//                LogManager.i(TAG, "App Settings - Pitch: ${settings.ttsPitch}")
-//
-//            } catch (e: Exception) {
-//                LogManager.logCaughtException(TAG, "Error in TTS debug", e)
-//            }
-//        }
-//    }
-
-//    // Fix 1: Make TTS data loading non-blocking
-//    private fun refreshTtsDataNonBlocking() {
-//        coroutineScope.launch(Dispatchers.IO) { // Use IO dispatcher for heavy work
-//            try {
-//                LogManager.i(TAG, "Starting non-blocking TTS data refresh...")
-//
-//                if (!isTtsInitialized.value) {
-//                    LogManager.w(TAG, "TTS not initialized, skipping refresh")
-//                    return@launch
-//                }
-//
-//                // Load languages in background
-//                withContext(Dispatchers.Main) {
-//                    loadLanguagesQuickly()
-//                }
-//
-//                // Small delay to let UI update
-//                delay(100)
-//
-//                // Load voices in background
-//                withContext(Dispatchers.Main) {
-//                    loadVoicesQuickly()
-//                }
-//
-//                LogManager.i(TAG, "TTS data refresh completed")
-//
-//            } catch (e: Exception) {
-//                LogManager.logCaughtException(TAG, "Error in non-blocking TTS refresh", e)
-//            }
-//        }
-//
-//    }
 
     // Fix 2: Quick language loading without heavy processing
     private fun loadLanguagesQuickly() {
@@ -2967,7 +2551,6 @@ private fun Modifier.disableSelection() = composed {
 
 // Settings related
 
-
 // Then, modify the ChatState to include our RAG file selections
 data class ChatState(
     val messages: List<Message> = emptyList(),
@@ -2977,36 +2560,36 @@ data class ChatState(
         RagFile("2a4a9a2d-a317-470b-996c-6b0b44761b23", "Table of Polymer Data for Processing", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.html"),
         RagFile("9c4a27f2-509f-4856-838a-954d20f0098a", "Table of Workcells, Robots, Presses and HMI units", "https://sparkonelabs.com/RAG_pdfs/Molding_Layout.html"),
         RagFile("89c8e301-744e-455a-9d9c-0ec905869bc1", "Plastic Injection Molding Processing Technician Guide", "https://sparkonelabs.com/RAG_pdfs/Processing_Troubleshooting_Guide.html"),
-        RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", "https://sparkonelabs.com/RAG_pdfs/18036_01.pdf"),
-        RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", "https://sparkonelabs.com/RAG_pdfs/18036_02.pdf"),
-        RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", "https://sparkonelabs.com/RAG_pdfs/18036_03.pdf"),
-        RagFile("b40db982-31c1-4509-a83e-12721414d0b9", "Plastic Technician's Toolbox Volume 4A - Clamp End", "https://sparkonelabs.com/RAG_pdfs/18036_04a.pdf"),
-        RagFile("827d3a3c-88a4-402f-9fbd-75b3870a0483", "Plastic Technician's Toolbox Volume 4B - Auxiliary Equipment", "https://sparkonelabs.com/RAG_pdfs/18036_04b.pdf"),
-        RagFile("44d95954-ec6b-4014-8f7c-75756f8f60c0", "Plastic Technician's Toolbox Volume 5A - Part Design", "https://sparkonelabs.com/RAG_pdfs/18036_05a.pdf"),
-        RagFile("69c94350-76cf-4cdf-9470-073335650543", "Plastic Technician's Toolbox Volume 5B - Mold Base Standard Components", "https://sparkonelabs.com/RAG_pdfs/18036_05b.pdf"),
-        RagFile("efb987a5-60b0-47a7-bc3b-76acbb0120c7", "Plastic Technician's Toolbox Volume 5C - Mold Design", "https://sparkonelabs.com/RAG_pdfs/18036_05c.pdf"),
-        RagFile("73471eb3-5f11-43e3-887e-6c2b3b6b007b", "Plastic Technician's Toolbox Volume 5D - Runners", "https://sparkonelabs.com/RAG_pdfs/18036_05d.pdf"),
-        RagFile("1e280199-160d-4b4d-a246-20d3cc57a504", "Plastic Technician's Toolbox Volume 5E - Hot Runner Systems", "https://sparkonelabs.com/RAG_pdfs/18036_05e.pdf"),
-        RagFile("92f5d18e-94a9-4de0-84cb-b98e033a5d17", "Plastic Technician's Toolbox Volume 5F - Ejection", "https://sparkonelabs.com/RAG_pdfs/18036_05f.pdf"),
-        RagFile("48a8a134-2797-4d04-9c51-10351e03ac61", "Plastic Technician's Toolbox Volume 5G - Dealing with Undercuts", "https://sparkonelabs.com/RAG_pdfs/18036_05g.pdf"),
-        RagFile("b869f50c-2883-4ccf-b694-fd583f906985", "Plastic Technician's Toolbox Volume 6A - Plastic Flow", "https://sparkonelabs.com/RAG_pdfs/18036_06a.pdf"),
-        RagFile("9c563182-4ae6-4ecd-80c8-8c514c069e65", "Plastic Technician's Toolbox Volume 6B - Optimizing the Molding Process", "https://sparkonelabs.com/RAG_pdfs/18036_06b.pdf"),
-        RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians", "https://sparkonelabs.com/RAG_pdfs/18036_06c.pdf"),
-        RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations", "https://sparkonelabs.com/RAG_pdfs/18036_06d.pdf"),
-        RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process", "https://sparkonelabs.com/RAG_pdfs/18036_06e.pdf"),
-        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting", "https://sparkonelabs.com/RAG_pdfs/18036_06f.pdf"),
-        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual", "https://sparkonelabs.com/RAG_pdfs/Fanuc_R-30iA_and_R-30iB.pdf"),
-        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual", "https://sparkonelabs.com/RAG_pdfs/Fanuc_Programming_Manual.pdf"),
-        RagFile("c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_R-30iB_and_R-30iB_Mate_Plus_Controller_Maintenance_Manual.pdf"),
-        RagFile("2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_IO_Unit_Model_Connection_and_Maintenance_Manual.pdf"),
-        RagFile("37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_R-30iB_and_R-30iB_Plus_Controller_Maintenance_Manual.pdf"),
-        RagFile("d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_R-30iB_Plus_and_R-30iB_Mate_Plus_Controller_Software_Error_Code_Manual.pdf"),
-        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_M-20iB_Mechanical_Unit_Operators_Manual.pdf"),
-        RagFile("df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_M-710iC_50_70_50H_50S_45M_50E_Mechanical_Unit_Operators_Manual.pdf"),
-        RagFile("7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_R-2000iB_Mechanical_Unit_Operators_Manual.pdf"),
-        RagFile("af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/FANUC_Robot_R-2000iC_Mechanical_Unit_Operators_Manual.pdf"),
-        RagFile("4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)", "https://sparkonelabs.com/RAG_pdfs/eDART_Process_Control_Software_v10.xx_Manual_06.23.2017.pdf"),
-        RagFile("a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual", "https://sparkonelabs.com/RAG_pdfs/RJG_eDart_getting_started.pdf")
+        RagFile("abf471b1-55cd-41b4-b8f0-46211cf978b1", "Plastic Technician's Toolbox Volume 1 - Math", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_01.pdf"),
+        RagFile("a17ecf98-5c0d-4208-8de2-03b2d68c8c37", "Plastic Technician's Toolbox Volume 2 - Safety", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_02.pdf"),
+        RagFile("cf989978-e6e9-48fb-b5b4-6d8f9758e623", "Plastic Technician's Toolbox Volume 3 - Glossary", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_03.pdf"),
+        RagFile("b40db982-31c1-4509-a83e-12721414d0b9", "Plastic Technician's Toolbox Volume 4A - Clamp End", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_04a.pdf"),
+        RagFile("827d3a3c-88a4-402f-9fbd-75b3870a0483", "Plastic Technician's Toolbox Volume 4B - Auxiliary Equipment", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_04b.pdf"),
+        RagFile("44d95954-ec6b-4014-8f7c-75756f8f60c0", "Plastic Technician's Toolbox Volume 5A - Part Design", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05a.pdf"),
+        RagFile("69c94350-76cf-4cdf-9470-073335650543", "Plastic Technician's Toolbox Volume 5B - Mold Base Standard Components", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05b.pdf"),
+        RagFile("efb987a5-60b0-47a7-bc3b-76acbb0120c7", "Plastic Technician's Toolbox Volume 5C - Mold Design", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05c.pdf"),
+        RagFile("73471eb3-5f11-43e3-887e-6c2b3b6b007b", "Plastic Technician's Toolbox Volume 5D - Runners", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05d.pdf"),
+        RagFile("1e280199-160d-4b4d-a246-20d3cc57a504", "Plastic Technician's Toolbox Volume 5E - Hot Runner Systems", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05e.pdf"),
+        RagFile("92f5d18e-94a9-4de0-84cb-b98e033a5d17", "Plastic Technician's Toolbox Volume 5F - Ejection", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05f.pdf"),
+        RagFile("48a8a134-2797-4d04-9c51-10351e03ac61", "Plastic Technician's Toolbox Volume 5G - Dealing with Undercuts", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_05g.pdf"),
+        RagFile("b869f50c-2883-4ccf-b694-fd583f906985", "Plastic Technician's Toolbox Volume 6A - Plastic Flow", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_06a.pdf"),
+        RagFile("9c563182-4ae6-4ecd-80c8-8c514c069e65", "Plastic Technician's Toolbox Volume 6B - Optimizing the Molding Process", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_06b.pdf"),
+        RagFile("a440c0b0-11a1-49d9-950a-0f9a46a1576c", "Plastic Technician's Toolbox Volume 6C - Tips for Supervisors and Technicians", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_06c.pdf"),
+        RagFile("5391b346-d64a-4507-ae73-7a25c50767a3", "Plastic Technician's Toolbox Volume 6D - Computer Flow Simulations", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_06d.pdf"),
+        RagFile("0a91203f-1216-49d5-9b95-229583e0a787", "Plastic Technician's Toolbox Volume 6E - The MuCell(R) Process", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_06e.pdf"),
+        RagFile("03ea07c4-6c3e-47c8-9f51-0e6489ae3189", "Plastic Technician's Toolbox Volume 6F - Troubleshooting", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=18036_06f.pdf"),
+        RagFile("664cd351-e0a3-42b3-8429-ba0bedbc5501", "FANUC R-30iA and R-30iB Controller KAREL Reference Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=Fanuc_R-30iA_and_R-30iB.pdf"),
+        RagFile("f4539ec4-0e85-4614-9c2f-7dba282c5be9", "FANUC Series 0i, 16, 18, 20, 21 Macro Compiler/Executor Programming Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=Fanuc_Programming_Manual.pdf"),
+        RagFile("c1efe9b2-29ee-4553-9c86-57c87b3f7c5f", "FANUC R-30iB / R-30iB Mate Plus Controller Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_R-30iB_and_R-30iB_Mate_Plus_Controller_Maintenance_Manual.pdf"),
+        RagFile("2c18abc6-14ee-4ac1-94c9-f2e40fe26508", "FANUC I/O Unit-MODEL A: Connection and Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_IO_Unit_Model_Connection_and_Maintenance_Manual.pdf"),
+        RagFile("37a65837-c584-451c-aa7f-ef97613e0a60", "FANUC Robot Series R-30iB/R-30iB Plus Controller Maintenance Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_R-30iB_and_R-30iB_Plus_Controller_Maintenance_Manual.pdf"),
+        RagFile("d25909ee-6d11-4b4d-99ec-4a606545a31d", "FANUC R-30iB Plus and R-30iB Mate Plus Controller Software Error Code Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_R-30iB_Plus_and_R-30iB_Mate_Plus_Controller_Software_Error_Code_Manual.pdf"),
+        RagFile("d770ad73-dfa9-4723-96ce-2a83b6fd3be8","FANUC Robot M-20iB Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_Robot_M-20iB_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("df8ccc7e-f647-4088-b45c-46924df6f77c", "FANUC Robot M-710iC /50/70/50H/50S/45M/50E Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_Robot_M-710iC_50_70_50H_50S_45M_50E_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("7f6766d2-cbda-4cf2-9a0a-e01fac414036", "FANUC Robot R-2000iB Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_Robot_R-2000iB_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("af572edb-5de5-4d95-b8c8-ff6909839fcd", "FANUC Robot R-2000iC Mechanical Unit Operator's Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=FANUC_Robot_R-2000iC_Mechanical_Unit_Operators_Manual.pdf"),
+        RagFile("4eec512d-76dd-474f-b6b4-702ebb7155fa", "eDart Process Control Software v10.xx Manual (2017)", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=eDART_Process_Control_Software_v10.xx_Manual_06.23.2017.pdf"),
+        RagFile("a7018213-554e-4e67-ae92-a63d94c24c86", "RJG eDart Getting Started Manual", "https://sparkonelabs.com/RAG_pdfs/pdf_viewer.html?pdf=RJG_eDart_getting_started.pdf")
     )
 ) : Serializable
 
