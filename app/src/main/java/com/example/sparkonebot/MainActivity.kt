@@ -2,9 +2,9 @@ package com.example.oxfordbot
 
 // Section to import various elements of project
 import com.example.oxfordbot.ui.theme.*
-import com.example.oxfordbot.SettingsScreenWithLazyLoading
-import com.example.oxfordbot.NetworkDetailsScreen
-import com.example.oxfordbot.RagDataScreen
+//import com.example.oxfordbot.SettingsScreenWithLazyLoading
+//import com.example.oxfordbot.NetworkDetailsScreen
+//import com.example.oxfordbot.RagDataScreen
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
@@ -42,17 +42,6 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.rounded.Phone
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.Card
-import androidx.compose.material.RadioButton
-import androidx.compose.material.Switch
-import androidx.compose.material.SwitchDefaults
-import androidx.compose.material.Slider
-import androidx.compose.material.SliderDefaults
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.DropdownMenu
-import androidx.compose.material.DropdownMenuItem
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,11 +57,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.Badge
-import androidx.compose.material.Checkbox
-import androidx.compose.material.CheckboxDefaults
+//import androidx.compose.material.Checkbox
+//import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
-import androidx.compose.material.ButtonDefaults
+//import androidx.compose.material.ButtonDefaults
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.*
@@ -145,7 +134,7 @@ class MainActivity : ComponentActivity() {
         private const val KEY_CHAT_STATE = "chat_state"
         private const val KEY_INTRO_FINISHED = "intro_finished"
         private const val STORAGE_PERMISSION_CODE = 100 // To allow PDFs to be located
-        private const val MEDIA_PERMISSION_CODE = 101 // For Android 13+
+        //private const val MEDIA_PERMISSION_CODE = 101 // For Android 13+
         private const val KEY_APP_SETTINGS = "app_settings"
 
         // Define the permission constant for older SDK compatibility
@@ -178,28 +167,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Simplified version that should work for most cases (Preferred over more extensive version)
-    private fun requestStoragePermissionsSimple() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val permissions = mutableListOf<String>()
-
-            // For most Android versions, READ_EXTERNAL_STORAGE is sufficient
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-
-            if (permissions.isNotEmpty()) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    permissions.toTypedArray(),
-                    STORAGE_PERMISSION_CODE
-                )
-            } else {
-                LogManager.i(TAG, "Storage permission already granted")
-            }
-        }
-    }
+//    // Simplified version that should work for most cases (Preferred over more extensive version)
+//    private fun requestStoragePermissionsSimple() {
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+//            val permissions = mutableListOf<String>()
+//
+//            // For most Android versions, READ_EXTERNAL_STORAGE is sufficient
+//            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+//                != PackageManager.PERMISSION_GRANTED) {
+//                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+//            }
+//
+//            if (permissions.isNotEmpty()) {
+//                ActivityCompat.requestPermissions(
+//                    this,
+//                    permissions.toTypedArray(),
+//                    STORAGE_PERMISSION_CODE
+//                )
+//            } else {
+//                LogManager.i(TAG, "Storage permission already granted")
+//            }
+//        }
+//    }
 
     // Fix 1: Update the onRequestPermissionsResult method signature
     //override fun onRequestPermissionsResult(
@@ -257,16 +246,16 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    // Helper method to handle permission denial
-    private fun handlePermissionDenied(permission: String) {
-        if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
-            LogManager.w("Permissions", "User selected 'Don't ask again' for $permission")
-            showPermissionPermanentlyDeniedDialog()
-        } else {
-            LogManager.w("Permissions", "User denied $permission but can ask again")
-            Toast.makeText(this, "Storage permission needed to find downloaded PDFs", Toast.LENGTH_LONG).show()
-        }
-    }
+//    // Helper method to handle permission denial
+//    private fun handlePermissionDenied(permission: String) {
+//        if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
+//            LogManager.w("Permissions", "User selected 'Don't ask again' for $permission")
+//            showPermissionPermanentlyDeniedDialog()
+//        } else {
+//            LogManager.w("Permissions", "User denied $permission but can ask again")
+//            Toast.makeText(this, "Storage permission needed to find downloaded PDFs", Toast.LENGTH_LONG).show()
+//        }
+//    }
 
     // Dialog for when permission is permanently denied
     private fun showPermissionPermanentlyDeniedDialog() {
@@ -1183,1054 +1172,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Complete Settings Screen Composable with Lazy Loading
-//    @Composable
-//    fun SettingsScreenWithLazyLoading(
-//        settings: AppSettings,
-//        onSettingsChange: (AppSettings) -> Unit,
-//        onClose: () -> Unit
-//    ) {
-//        val scrollState = rememberLazyListState()
-//        var isLoadingTtsData by remember { mutableStateOf(true) }
-//        var ttsLoadingMessage by remember { mutableStateOf("Loading TTS data...") }
-//
-//        // Non-blocking TTS data loading
-//        LaunchedEffect(Unit) {
-//            launch(Dispatchers.IO) {
-//                try {
-//                    withContext(Dispatchers.Main) {
-//                        ttsLoadingMessage = "Loading languages..."
-//                    }
-//
-//                    delay(50) // Let UI update
-//
-//                    withContext(Dispatchers.Main) {
-//                        loadLanguagesQuickly()
-//                    }
-//
-//                    withContext(Dispatchers.Main) {
-//                        ttsLoadingMessage = "Loading voices..."
-//                    }
-//
-//                    delay(50) // Let UI update
-//
-//                    withContext(Dispatchers.Main) {
-//                        loadVoicesQuickly()
-//                    }
-//
-//                    delay(100) // Small final delay
-//
-//                    withContext(Dispatchers.Main) {
-//                        isLoadingTtsData = false
-//                    }
-//
-//                } catch (e: Exception) {
-//                    LogManager.logCaughtException(TAG, "Error in lazy TTS loading", e)
-//                    withContext(Dispatchers.Main) {
-//                        isLoadingTtsData = false
-//                    }
-//                }
-//            }
-//        }
-//
-//        Column(
-//            modifier = Modifier
-//                .fillMaxSize()
-//                .background(Navy)
-//                .padding(16.dp)
-//        ) {
-//            // Header
-//            Row(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .padding(bottom = 16.dp),
-//                horizontalArrangement = Arrangement.SpaceBetween,
-//                verticalAlignment = Alignment.CenterVertically
-//            ) {
-//                Text(
-//                    text = "Settings",
-//                    color = Gold,
-//                    style = MaterialTheme.typography.h6
-//                )
-//
-//                Button(
-//                    onClick = onClose,
-//                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
-//                ) {
-//                    Text("Done", color = Color.White)
-//                }
-//            }
-//
-//            Divider(color = LightBlue, thickness = 1.dp)
-//
-//            LazyColumn(
-//                modifier = Modifier
-//                    .fillMaxSize()
-//                    .weight(1f),
-//                state = scrollState
-//            ) {
-//                // Model Selection Section
-//                item {
-//                    SettingsSection(title = "AI Model") {
-//                        ModelSelectionCard(
-//                            selectedModel = settings.selectedModel,
-//                            onModelSelected = { model ->
-//                                onSettingsChange(settings.copy(selectedModel = model))
-//                            }
-//                        )
-//                    }
-//                }
-//
-//                // API Settings Section
-//                item {
-//                    SettingsSection(title = "API Settings") {
-//                        TimeoutSettingCard(
-//                            timeout = settings.apiTimeout,
-//                            onTimeoutChanged = { timeout ->
-//                                onSettingsChange(settings.copy(apiTimeout = timeout))
-//                            }
-//                        )
-//                    }
-//                }
-//
-//                // App Behavior Section
-//                item {
-//                    SettingsSection(title = "App Behavior") {
-//                        Column {
-//                            SwitchSettingCard(
-//                                title = "Show Thinking",
-//                                description = "Display AI reasoning process in responses",
-//                                isEnabled = settings.showThinking,
-//                                onToggle = { enabled ->
-//                                    onSettingsChange(settings.copy(showThinking = enabled))
-//                                }
-//                            )
-//
-//                            SwitchSettingCard(
-//                                title = "Enable Text-to-Speech",
-//                                description = "Enable voice output for AI responses",
-//                                isEnabled = settings.enableTTS,
-//                                onToggle = { enabled ->
-//                                    onSettingsChange(settings.copy(enableTTS = enabled))
-//                                }
-//                            )
-//
-//                            if (settings.enableTTS) {
-//                                Spacer(modifier = Modifier.height(8.dp))
-//
-//                                if (isLoadingTtsData) {
-//                                    // Show loading indicator
-//                                    Card(
-//                                        modifier = Modifier.fillMaxWidth(),
-//                                        backgroundColor = Color.Black.copy(alpha = 0.3f)
-//                                    ) {
-//                                        Row(
-//                                            modifier = Modifier.padding(16.dp),
-//                                            verticalAlignment = Alignment.CenterVertically
-//                                        ) {
-//                                            CircularProgressIndicator(
-//                                                modifier = Modifier.size(24.dp),
-//                                                color = Gold,
-//                                                strokeWidth = 2.dp
-//                                            )
-//                                            Spacer(modifier = Modifier.width(12.dp))
-//                                            Text(
-//                                                text = ttsLoadingMessage,
-//                                                color = Color.White,
-//                                                style = MaterialTheme.typography.body2
-//                                            )
-//                                        }
-//                                    }
-//                                } else {
-//                                    // Speech Rate
-//                                    SliderSettingCard(
-//                                        title = "Speech Rate",
-//                                        description = "How fast the speech is (0.5 = slow, 2.0 = fast)",
-//                                        value = settings.ttsSpeechRate,
-//                                        range = 0.5f..2.0f,
-//                                        steps = 29, // 0.05 increments
-//                                        onValueChanged = { rate ->
-//                                            onSettingsChange(settings.copy(ttsSpeechRate = rate))
-//                                            // Apply immediately for preview
-//                                            textToSpeech?.setSpeechRate(rate)
-//                                        }
-//                                    )
-//
-//                                    Spacer(modifier = Modifier.height(8.dp))
-//
-//                                    // Pitch
-//                                    SliderSettingCard(
-//                                        title = "Pitch",
-//                                        description = "Voice tone (0.5 = low, 2.0 = high)",
-//                                        value = settings.ttsPitch,
-//                                        range = 0.5f..2.0f,
-//                                        steps = 29, // 0.05 increments
-//                                        onValueChanged = { pitch ->
-//                                            onSettingsChange(settings.copy(ttsPitch = pitch))
-//                                            // Apply immediately for preview
-//                                            textToSpeech?.setPitch(pitch)
-//                                        }
-//                                    )
-//
-//                                    Spacer(modifier = Modifier.height(8.dp))
-//
-//                                    // Volume
-//                                    SliderSettingCard(
-//                                        title = "TTS Volume",
-//                                        description = "Speech volume (0.0 = silent, 1.0 = max)",
-//                                        value = settings.ttsVolume,
-//                                        range = 0.0f..1.0f,
-//                                        steps = 19, // 0.05 increments
-//                                        onValueChanged = { volume ->
-//                                            onSettingsChange(settings.copy(ttsVolume = volume))
-//                                        }
-//                                    )
-//
-//                                    Spacer(modifier = Modifier.height(8.dp))
-//
-//                                    // Language Selection
-//                                    if (availableLanguages.isNotEmpty()) {
-//                                        DropdownSettingCard(
-//                                            title = "Language",
-//                                            description = "Select TTS language",
-//                                            selectedValue = settings.ttsLanguage,
-//                                            options = availableLanguages.map {
-//                                                formatLocaleString(it.locale) to it.displayName
-//                                            },
-//                                            onSelectionChanged = { localeString ->
-//                                                onSettingsChange(settings.copy(ttsLanguage = localeString))
-//                                                // Apply immediately
-//                                                val locale = parseLocaleString(localeString)
-//                                                textToSpeech?.setLanguage(locale)
-//                                                // Reload voices for new language (non-blocking)
-//                                                coroutineScope.launch(Dispatchers.IO) {
-//                                                    withContext(Dispatchers.Main) {
-//                                                        loadVoicesQuickly()
-//                                                    }
-//                                                }
-//                                            }
-//                                        )
-//
-//                                        Spacer(modifier = Modifier.height(8.dp))
-//                                    }
-//
-//                                    // Voice Selection (API 21+)
-//                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-//                                        val voiceOptions = if (availableVoices.isNotEmpty()) {
-//                                            listOf("" to "Default Voice") + availableVoices.map {
-//                                                it.name to it.displayName
-//                                            }
-//                                        } else {
-//                                            listOf("" to "Default Voice")
-//                                        }
-//
-//                                        DropdownSettingCard(
-//                                            title = "Voice",
-//                                            description = if (availableVoices.isEmpty())
-//                                                "Loading voices..."
-//                                            else
-//                                                "Select specific voice (optional)",
-//                                            selectedValue = settings.ttsVoice,
-//                                            options = voiceOptions,
-//                                            onSelectionChanged = { voiceName ->
-//                                                onSettingsChange(settings.copy(ttsVoice = voiceName))
-//                                                // Apply voice in background to avoid UI freeze
-//                                                coroutineScope.launch(Dispatchers.Main) {
-//                                                    applyVoiceSettingsQuickly(voiceName)
-//                                                }
-//                                            }
-//                                        )
-//
-//                                        Spacer(modifier = Modifier.height(8.dp))
-//                                    }
-//
-//                                    // Test TTS Button
-//                                    Button(
-//                                        onClick = {
-//                                            LogManager.i(TAG, "Test Speech button clicked - USER INITIATED")
-//
-//                                            // Quick test without heavy processing
-//                                            coroutineScope.launch(Dispatchers.Main) {
-//                                                try {
-//                                                    // Stop any current speech
-//                                                    textToSpeech?.stop()
-//
-//                                                    // Apply current settings quickly
-//                                                    textToSpeech?.let { tts ->
-//                                                        tts.setSpeechRate(settings.ttsSpeechRate)
-//                                                        tts.setPitch(settings.ttsPitch)
-//
-//                                                        val locale = parseLocaleString(settings.ttsLanguage)
-//                                                        tts.setLanguage(locale)
-//
-//                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && settings.ttsVoice.isNotEmpty()) {
-//                                                            val voice = tts.voices?.find { it.name == settings.ttsVoice }
-//                                                            voice?.let { tts.setVoice(it) }
-//                                                        }
-//                                                    }
-//
-//                                                    // Test speak with immediate playback
-//                                                    val testText = "This is a test of the selected voice settings."
-//                                                    textToSpeech?.speak(
-//                                                        testText,
-//                                                        TextToSpeech.QUEUE_FLUSH,
-//                                                        null,
-//                                                        "voice_test_${System.currentTimeMillis()}"
-//                                                    )
-//
-//                                                    LogManager.i(TAG, "Test speech initiated")
-//                                                } catch (e: Exception) {
-//                                                    LogManager.logCaughtException(TAG, "Error in test speech", e)
-//                                                }
-//                                            }
-//                                        },
-//                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-//                                        modifier = Modifier.fillMaxWidth()
-//                                    ) {
-//                                        Text("Test Speech", color = Color.White)
-//                                    }
-//                                }
-//                            }
-//
-//                            Spacer(modifier = Modifier.height(8.dp))
-//
-//                            SwitchSettingCard(
-//                                title = "Auto-save Chat",
-//                                description = "Automatically save chat history",
-//                                isEnabled = settings.autoSaveChat,
-//                                onToggle = { enabled ->
-//                                    onSettingsChange(settings.copy(autoSaveChat = enabled))
-//                                }
-//                            )
-//
-//                            // Add this section right after the Auto-save Chat toggle in your SettingsScreenWithLazyLoading composable
-//// Find the SwitchSettingCard for "Auto-save Chat" and add this code right after it:
-//
-//                            Spacer(modifier = Modifier.height(8.dp))
-//
-//// Clear Chat History Button
-//                            Button(
-//                                onClick = {
-//                                    // Clear the chat messages
-//                                    chatState.value = chatState.value.copy(messages = emptyList())
-//
-//                                    // Log the action
-//                                    LogManager.i(TAG, "Chat history cleared by user from settings")
-//
-//                                    // Show confirmation toast
-//                                    Toast.makeText(
-//                                        this@MainActivity,
-//                                        "Chat history cleared",
-//                                        Toast.LENGTH_SHORT
-//                                    ).show()
-//                                },
-//                                colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red),
-//                                modifier = Modifier.fillMaxWidth()
-//                            ) {
-//                                Text("Clear Chat History", color = Color.White)
-//                            }
-//
-//                            Text(
-//                                text = "This will permanently delete all chat messages",
-//                                color = Color.Gray,
-//                                style = MaterialTheme.typography.caption,
-//                                modifier = Modifier.padding(top = 4.dp)
-//                            )
-//
-//                        }
-//                    }
-//                }
-//
-//                // TTS Debugging
-//                item {
-//                    SettingsSection(title = "TTS Debug Info") {
-//                        Card(
-//                            modifier = Modifier.fillMaxWidth(),
-//                            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//                        ) {
-//                            Column(modifier = Modifier.padding(16.dp)) {
-//                                Text(
-//                                    text = "TTS Status",
-//                                    color = Gold,
-//                                    style = MaterialTheme.typography.body1,
-//                                    fontWeight = FontWeight.Bold
-//                                )
-//
-//                                Text(
-//                                    text = "Initialized: ${isTtsInitialized.value}",
-//                                    color = Color.White,
-//                                    style = MaterialTheme.typography.body2
-//                                )
-//
-//                                Text(
-//                                    text = "Languages: ${availableLanguages.size}",
-//                                    color = Color.White,
-//                                    style = MaterialTheme.typography.body2
-//                                )
-//
-//                                Text(
-//                                    text = "Voices: ${availableVoices.size}",
-//                                    color = Color.White,
-//                                    style = MaterialTheme.typography.body2
-//                                )
-//
-//                                Spacer(modifier = Modifier.height(8.dp))
-//
-//                                Row(
-//                                    modifier = Modifier.fillMaxWidth(),
-//                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-//                                ) {
-//                                    Button(
-//                                        onClick = {
-//                                            // Reload voices non-blocking
-//                                            coroutineScope.launch(Dispatchers.IO) {
-//                                                withContext(Dispatchers.Main) {
-//                                                    loadLanguagesQuickly()
-//                                                    loadVoicesQuickly()
-//                                                }
-//                                            }
-//                                        },
-//                                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue),
-//                                        modifier = Modifier.weight(1f)
-//                                    ) {
-//                                        Text("Reload TTS", color = Color.White)
-//                                    }
-//
-//                                    Button(
-//                                        onClick = {
-//                                            // Add simple fallback voices
-//                                            loadVoicesSimple()
-//                                        },
-//                                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-//                                        modifier = Modifier.weight(1f)
-//                                    ) {
-//                                        Text("Add Default Voice", color = Color.White)
-//                                    }
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-//
-//                // Logging Settings Section
-//                item {
-//                    SettingsSection(title = "Logging") {
-//                        NumberSettingCard(
-//                            title = "Max Log Entries",
-//                            description = "Maximum number of log entries to keep",
-//                            value = settings.maxLogEntries,
-//                            range = 100..1000,
-//                            step = 100,
-//                            onValueChanged = { value ->
-//                                onSettingsChange(settings.copy(maxLogEntries = value))
-//                            }
-//                        )
-//                    }
-//                }
-//
-//                // Network Settings Section
-//                item {
-//                    SettingsSection(title = "Network") {
-//                        NumberSettingCard(
-//                            title = "Test Interval",
-//                            description = "Connectivity test interval (seconds)",
-//                            value = settings.connectivityTestInterval,
-//                            range = 10..300,
-//                            step = 10,
-//                            onValueChanged = { value ->
-//                                onSettingsChange(settings.copy(connectivityTestInterval = value))
-//                            }
-//                        )
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun SettingsSection(
-//        title: String,
-//        content: @Composable () -> Unit
-//    ) {
-//        Column(
-//            modifier = Modifier
-//                .fillMaxWidth()
-//                .padding(vertical = 8.dp)
-//        ) {
-//            Text(
-//                text = title,
-//                color = Gold,
-//                style = MaterialTheme.typography.subtitle1,
-//                fontWeight = FontWeight.Bold,
-//                modifier = Modifier.padding(bottom = 8.dp)
-//            )
-//            content()
-//            Divider(
-//                color = Color.DarkGray,
-//                thickness = 0.5.dp,
-//                modifier = Modifier.padding(top = 8.dp)
-//            )
-//        }
-//    }
-
-//    @Composable
-//    fun ModelSelectionCard(
-//        selectedModel: String,
-//        onModelSelected: (String) -> Unit
-//    ) {
-//        val availableModels = listOf("qwen3:8b", "qwen3:32b", "deepseek-r1:32b")
-//
-//        Card(
-//            modifier = Modifier.fillMaxWidth(),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Column(
-//                modifier = Modifier.padding(16.dp)
-//            ) {
-//                Text(
-//                    text = "Select AI Model",
-//                    color = LightBlue,
-//                    style = MaterialTheme.typography.body1,
-//                    fontWeight = FontWeight.Bold
-//                )
-//
-//                Spacer(modifier = Modifier.height(12.dp))
-//
-//                availableModels.forEach { model ->
-//                    Row(
-//                        modifier = Modifier
-//                            .fillMaxWidth()
-//                            .clickable { onModelSelected(model) }
-//                            .padding(vertical = 4.dp),
-//                        verticalAlignment = Alignment.CenterVertically
-//                    ) {
-//                        RadioButton(
-//                            selected = selectedModel == model,
-//                            onClick = { onModelSelected(model) },
-//                            colors = RadioButtonDefaults.colors(
-//                                selectedColor = Gold,
-//                                unselectedColor = Color.Gray
-//                            )
-//                        )
-//
-//                        Column(
-//                            modifier = Modifier.padding(start = 8.dp)
-//                        ) {
-//                            Text(
-//                                text = model,
-//                                color = Color.White,
-//                                style = MaterialTheme.typography.body2
-//                            )
-//                            Text(
-//                                text = getModelDescription(model),
-//                                color = Color.Gray,
-//                                style = MaterialTheme.typography.caption
-//                            )
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun SwitchSettingCard(
-//        title: String,
-//        description: String,
-//        isEnabled: Boolean,
-//        onToggle: (Boolean) -> Unit
-//    ) {
-//        Card(
-//            modifier = Modifier.fillMaxWidth(),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Row(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .clickable { onToggle(!isEnabled) }
-//                    .padding(16.dp),
-//                horizontalArrangement = Arrangement.SpaceBetween,
-//                verticalAlignment = Alignment.CenterVertically
-//            ) {
-//                Column(
-//                    modifier = Modifier.weight(1f)
-//                ) {
-//                    Text(
-//                        text = title,
-//                        color = Color.White,
-//                        style = MaterialTheme.typography.body1
-//                    )
-//                    Text(
-//                        text = description,
-//                        color = Color.Gray,
-//                        style = MaterialTheme.typography.caption
-//                    )
-//                }
-//
-//                Switch(
-//                    checked = isEnabled,
-//                    onCheckedChange = onToggle,
-//                    colors = SwitchDefaults.colors(
-//                        checkedThumbColor = Gold,
-//                        checkedTrackColor = Gold.copy(alpha = 0.5f),
-//                        uncheckedThumbColor = Color.Gray,
-//                        uncheckedTrackColor = Color.DarkGray
-//                    )
-//                )
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun TimeoutSettingCard(
-//        timeout: Int,
-//        onTimeoutChanged: (Int) -> Unit
-//    ) {
-//        Card(
-//            modifier = Modifier.fillMaxWidth(),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Column(
-//                modifier = Modifier.padding(16.dp)
-//            ) {
-//                Text(
-//                    text = "API Timeout",
-//                    color = Color.White,
-//                    style = MaterialTheme.typography.body1,
-//                    fontWeight = FontWeight.Bold
-//                )
-//
-//                Text(
-//                    text = "Request timeout in seconds",
-//                    color = Color.Gray,
-//                    style = MaterialTheme.typography.caption
-//                )
-//
-//                Spacer(modifier = Modifier.height(12.dp))
-//
-//                Row(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    horizontalArrangement = Arrangement.SpaceBetween,
-//                    verticalAlignment = Alignment.CenterVertically
-//                ) {
-//                    Button(
-//                        onClick = { onTimeoutChanged(maxOf(60, timeout - 60)) },
-//                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-//                    ) {
-//                        Text("-", color = Color.White)
-//                    }
-//
-//                    Text(
-//                        text = "${timeout}s",
-//                        color = Gold,
-//                        style = MaterialTheme.typography.h6
-//                    )
-//
-//                    Button(
-//                        onClick = { onTimeoutChanged(minOf(1200, timeout + 60)) },
-//                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-//                    ) {
-//                        Text("+", color = Color.White)
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun NumberSettingCard(
-//        title: String,
-//        description: String,
-//        value: Int,
-//        range: IntRange,
-//        step: Int,
-//        onValueChanged: (Int) -> Unit
-//    ) {
-//        Card(
-//            modifier = Modifier.fillMaxWidth(),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Column(
-//                modifier = Modifier.padding(16.dp)
-//            ) {
-//                Text(
-//                    text = title,
-//                    color = Color.White,
-//                    style = MaterialTheme.typography.body1,
-//                    fontWeight = FontWeight.Bold
-//                )
-//
-//                Text(
-//                    text = description,
-//                    color = Color.Gray,
-//                    style = MaterialTheme.typography.caption
-//                )
-//
-//                Spacer(modifier = Modifier.height(12.dp))
-//
-//                Row(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    horizontalArrangement = Arrangement.SpaceBetween,
-//                    verticalAlignment = Alignment.CenterVertically
-//                ) {
-//                    Button(
-//                        onClick = { onValueChanged(maxOf(range.first, value - step)) },
-//                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-//                    ) {
-//                        Text("-", color = Color.White)
-//                    }
-//
-//                    Text(
-//                        text = "$value",
-//                        color = Gold,
-//                        style = MaterialTheme.typography.h6
-//                    )
-//
-//                    Button(
-//                        onClick = { onValueChanged(minOf(range.last, value + step)) },
-//                        colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-//                    ) {
-//                        Text("+", color = Color.White)
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-    // Network Details Screen Composable
-//    @Composable
-//    fun NetworkDetailsScreen(
-//        host: String,
-//        connectivityResults: List<ConnectivityResult>,
-//        isTestRunning: Boolean,
-//        onClose: () -> Unit,
-//        onRunTest: () -> Unit
-//    ) {
-//        val scrollState = rememberLazyListState()
-//
-//        Column(
-//            modifier = Modifier
-//                .fillMaxSize()
-//                .background(Navy)
-//                .padding(16.dp)
-//        ) {
-//            // Header
-//            Row(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .padding(bottom = 16.dp),
-//                horizontalArrangement = Arrangement.SpaceBetween,
-//                verticalAlignment = Alignment.CenterVertically
-//            ) {
-//                Column {
-//                    Text(
-//                        text = "Network Connectivity",
-//                        color = Gold,
-//                        style = MaterialTheme.typography.h6
-//                    )
-//                    Text(
-//                        text = "Target: $host:5555",
-//                        color = LightBlue,
-//                        style = MaterialTheme.typography.caption
-//                    )
-//                }
-//
-//                Row {
-//                    // Test button
-//                    Button(
-//                        onClick = onRunTest,
-//                        enabled = !isTestRunning,
-//                        colors = ButtonDefaults.buttonColors(backgroundColor = Green),
-//                        modifier = Modifier.padding(end = 8.dp)
-//                    ) {
-//                        if (isTestRunning) {
-//                            CircularProgressIndicator(
-//                                modifier = Modifier.size(16.dp),
-//                                color = Color.White,
-//                                strokeWidth = 2.dp
-//                            )
-//                        } else {
-//                            Text("Test", color = Color.White)
-//                        }
-//                    }
-//
-//                    // Close button
-//                    Button(
-//                        onClick = onClose,
-//                        colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
-//                    ) {
-//                        Text("Close", color = Color.White)
-//                    }
-//                }
-//            }
-//
-//            Divider(color = LightBlue, thickness = 1.dp)
-//
-//            // Current Status Summary
-//            if (connectivityResults.isNotEmpty()) {
-//                val latestResult = connectivityResults.first()
-//
-//                Card(
-//                    modifier = Modifier
-//                        .fillMaxWidth()
-//                        .padding(vertical = 8.dp),
-//                    backgroundColor = if (latestResult.isHostReachable && latestResult.isPortOpen)
-//                        Color.Green.copy(alpha = 0.1f) else Color.Red.copy(alpha = 0.1f)
-//                ) {
-//                    Column(
-//                        modifier = Modifier.padding(16.dp)
-//                    ) {
-//                        Text(
-//                            text = "Current Status",
-//                            color = Gold,
-//                            style = MaterialTheme.typography.subtitle1,
-//                            fontWeight = FontWeight.Bold
-//                        )
-//
-//                        Spacer(modifier = Modifier.height(8.dp))
-//
-//                        Row(
-//                            modifier = Modifier.fillMaxWidth(),
-//                            horizontalArrangement = Arrangement.SpaceBetween
-//                        ) {
-//                            StatusIndicator("Host Reachable", latestResult.isHostReachable)
-//                            StatusIndicator("Port Open", latestResult.isPortOpen)
-//                        }
-//
-//                        Spacer(modifier = Modifier.height(8.dp))
-//
-//                        Text(
-//                            text = "Response Time: ${latestResult.responseTime}ms",
-//                            color = LightBlue,
-//                            style = MaterialTheme.typography.body2
-//                        )
-//
-//                        Text(
-//                            text = "Last Tested: ${formatTimestamp(latestResult.timestamp)}",
-//                            color = Color.Gray,
-//                            style = MaterialTheme.typography.caption
-//                        )
-//
-//                        if (latestResult.errorMessage != null) {
-//                            Text(
-//                                text = "Error: ${latestResult.errorMessage}",
-//                                color = Color.Red,
-//                                style = MaterialTheme.typography.caption,
-//                                modifier = Modifier.padding(top = 4.dp)
-//                            )
-//                        }
-//                    }
-//                }
-//            }
-//
-//            // Test History
-//            Text(
-//                text = "Test History (${connectivityResults.size})",
-//                color = Gold,
-//                style = MaterialTheme.typography.subtitle1,
-//                modifier = Modifier.padding(vertical = 8.dp)
-//            )
-//
-//            Divider(color = LightBlue, thickness = 0.5.dp)
-//
-//            // Results list
-//            LazyColumn(
-//                modifier = Modifier
-//                    .fillMaxSize()
-//                    .weight(1f),
-//                state = scrollState
-//            ) {
-//                items(connectivityResults) { result ->
-//                    ConnectivityResultItem(result)
-//                }
-//
-//                if (connectivityResults.isEmpty()) {
-//                    item {
-//                        Box(
-//                            modifier = Modifier
-//                                .fillMaxWidth()
-//                                .padding(32.dp),
-//                            contentAlignment = Alignment.Center
-//                        ) {
-//                            Text(
-//                                text = "No test results yet.\nClick 'Test' to run connectivity check.",
-//                                color = Color.Gray,
-//                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-//                            )
-//                        }
-//                    }
-//                }
-//            }
-//
-//            // Statistics if we have results
-//            if (connectivityResults.isNotEmpty()) {
-//                Divider(color = LightBlue, thickness = 0.5.dp)
-//
-//                ConnectivityStats(connectivityResults)
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun StatusIndicator(label: String, status: Boolean) {
-//        Column(
-//            horizontalAlignment = Alignment.CenterHorizontally
-//        ) {
-//            Icon(
-//                imageVector = if (status) Icons.Default.CheckCircle else Icons.Default.Close,
-//                contentDescription = null,
-//                tint = if (status) Color.Green else Color.Red,
-//                modifier = Modifier.size(24.dp)
-//            )
-//            Text(
-//                text = label,
-//                color = if (status) Color.Green else Color.Red,
-//                style = MaterialTheme.typography.caption,
-//                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-//            )
-//        }
-//    }
-
-//    @Composable
-//    fun ConnectivityResultItem(result: ConnectivityResult) {
-//        val overallStatus = result.isHostReachable && result.isPortOpen
-//
-//        Column(
-//            modifier = Modifier
-//                .fillMaxWidth()
-//                .background(
-//                    if (overallStatus) Color.Green.copy(alpha = 0.05f)
-//                    else Color.Red.copy(alpha = 0.05f)
-//                )
-//                .padding(vertical = 8.dp, horizontal = 12.dp)
-//        ) {
-//            Row(
-//                modifier = Modifier.fillMaxWidth(),
-//                horizontalArrangement = Arrangement.SpaceBetween,
-//                verticalAlignment = Alignment.CenterVertically
-//            ) {
-//                Text(
-//                    text = formatTimestamp(result.timestamp),
-//                    color = Color.Gray,
-//                    fontSize = 10.sp,
-//                    fontFamily = FontFamily.Monospace
-//                )
-//
-//                Text(
-//                    text = "${result.responseTime}ms",
-//                    color = when {
-//                        result.responseTime < 100 -> Color.Green
-//                        result.responseTime < 500 -> Color.Yellow
-//                        else -> Color.Red
-//                    },
-//                    fontSize = 10.sp,
-//                    fontFamily = FontFamily.Monospace
-//                )
-//            }
-//
-//            Row(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .padding(top = 4.dp),
-//                horizontalArrangement = Arrangement.SpaceBetween
-//            ) {
-//                Text(
-//                    text = "Host: ${if (result.isHostReachable) "✓" else "✗"}",
-//                    color = if (result.isHostReachable) Color.Green else Color.Red,
-//                    fontSize = 12.sp
-//                )
-//
-//                Text(
-//                    text = "Port ${result.portNumber}: ${if (result.isPortOpen) "✓" else "✗"}",
-//                    color = if (result.isPortOpen) Color.Green else Color.Red,
-//                    fontSize = 12.sp
-//                )
-//            }
-//
-//            if (result.errorMessage != null) {
-//                Text(
-//                    text = "Error: ${result.errorMessage}",
-//                    color = Color.Red,
-//                    fontSize = 10.sp,
-//                    modifier = Modifier.padding(top = 2.dp)
-//                )
-//            }
-//        }
-//
-//        Divider(
-//            color = Color.DarkGray,
-//            thickness = 0.5.dp
-//        )
-//    }
-
-//    @Composable
-//    fun ConnectivityStats(results: List<ConnectivityResult>) {
-//        if (results.isEmpty()) return
-//
-//        val successfulTests = results.count { it.isHostReachable && it.isPortOpen }
-//        val successRate = (successfulTests.toFloat() / results.size * 100).toInt()
-//        val avgResponseTime = results.map { it.responseTime }.average().toLong()
-//        val minResponseTime = results.minOf { it.responseTime }
-//        val maxResponseTime = results.maxOf { it.responseTime }
-//
-//        Card(
-//            modifier = Modifier
-//                .fillMaxWidth()
-//                .padding(vertical = 8.dp),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Column(
-//                modifier = Modifier.padding(12.dp)
-//            ) {
-//                Text(
-//                    text = "Statistics",
-//                    color = Gold,
-//                    style = MaterialTheme.typography.subtitle2,
-//                    fontWeight = FontWeight.Bold
-//                )
-//
-//                Spacer(modifier = Modifier.height(8.dp))
-//
-//                Row(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    horizontalArrangement = Arrangement.SpaceBetween
-//                ) {
-//                    StatItem("Success Rate", "$successRate%")
-//                    StatItem("Avg Response", "${avgResponseTime}ms")
-//                }
-//
-//                Spacer(modifier = Modifier.height(4.dp))
-//
-//                Row(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    horizontalArrangement = Arrangement.SpaceBetween
-//                ) {
-//                    StatItem("Min Response", "${minResponseTime}ms")
-//                    StatItem("Max Response", "${maxResponseTime}ms")
-//                }
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun StatItem(label: String, value: String) {
-//        Column(
-//            horizontalAlignment = Alignment.CenterHorizontally
-//        ) {
-//            Text(
-//                text = value,
-//                color = LightBlue,
-//                style = MaterialTheme.typography.body2,
-//                fontWeight = FontWeight.Bold
-//            )
-//            Text(
-//                text = label,
-//                color = Color.Gray,
-//                style = MaterialTheme.typography.caption
-//            )
-//        }
-//    }
-
     // Now, update the DrawerContent function to include RAG Data option
     @Composable
     fun DrawerContent(
@@ -2726,182 +1667,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Text to Speech related
-    // Add these new composable functions
-//    @Composable
-//    fun SliderSettingCard(
-//        title: String,
-//        description: String,
-//        value: Float,
-//        range: ClosedFloatingPointRange<Float>,
-//        steps: Int,
-//        onValueChanged: (Float) -> Unit
-//    ) {
-//        Card(
-//            modifier = Modifier.fillMaxWidth(),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Column(
-//                modifier = Modifier.padding(16.dp)
-//            ) {
-//                Text(
-//                    text = title,
-//                    color = Color.White,
-//                    style = MaterialTheme.typography.body1,
-//                    fontWeight = FontWeight.Bold
-//                )
-//
-//                Text(
-//                    text = description,
-//                    color = Color.Gray,
-//                    style = MaterialTheme.typography.caption
-//                )
-//
-//                Spacer(modifier = Modifier.height(12.dp))
-//
-//                Row(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    verticalAlignment = Alignment.CenterVertically
-//                ) {
-//                    Text(
-//                        text = String.format("%.2f", range.start),
-//                        color = Color.Gray,
-//                        style = MaterialTheme.typography.caption,
-//                        modifier = Modifier.width(32.dp)
-//                    )
-//
-//                    Slider(
-//                        value = value,
-//                        onValueChange = onValueChanged,
-//                        valueRange = range,
-//                        steps = steps,
-//                        colors = SliderDefaults.colors(
-//                            thumbColor = Gold,
-//                            activeTrackColor = Gold,
-//                            inactiveTrackColor = Color.Gray
-//                        ),
-//                        modifier = Modifier.weight(1f)
-//                    )
-//
-//                    Text(
-//                        text = String.format("%.2f", range.endInclusive),
-//                        color = Color.Gray,
-//                        style = MaterialTheme.typography.caption,
-//                        modifier = Modifier.width(32.dp)
-//                    )
-//                }
-//
-//                Text(
-//                    text = "Current: ${String.format("%.2f", value)}",
-//                    color = Gold,
-//                    style = MaterialTheme.typography.body2,
-//                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-//                    modifier = Modifier.fillMaxWidth()
-//                )
-//            }
-//        }
-//    }
-
-//    @Composable
-//    fun DropdownSettingCard(
-//        title: String,
-//        description: String,
-//        selectedValue: String,
-//        options: List<Pair<String, String>>, // value to display name
-//        onSelectionChanged: (String) -> Unit
-//    ) {
-//        var expanded by remember { mutableStateOf(false) }
-//
-//        Card(
-//            modifier = Modifier.fillMaxWidth(),
-//            backgroundColor = Color.Black.copy(alpha = 0.3f)
-//        ) {
-//            Column(
-//                modifier = Modifier.padding(16.dp)
-//            ) {
-//                Text(
-//                    text = title,
-//                    color = Color.White,
-//                    style = MaterialTheme.typography.body1,
-//                    fontWeight = FontWeight.Bold
-//                )
-//
-//                Text(
-//                    text = description,
-//                    color = Color.Gray,
-//                    style = MaterialTheme.typography.caption
-//                )
-//
-//                Spacer(modifier = Modifier.height(12.dp))
-//
-//                Box(
-//                    modifier = Modifier.fillMaxWidth()
-//                ) {
-//                    OutlinedButton(
-//                        onClick = { expanded = true },
-//                        colors = ButtonDefaults.outlinedButtonColors(
-//                            backgroundColor = Color.Blue,
-//                            contentColor = Gold
-//                        ),
-//                        modifier = Modifier.fillMaxWidth()
-//                    ) {
-//                        // Fix: Handle empty options list
-//                        val displayText = when {
-//                            options.isEmpty() -> "No options available"
-//                            selectedValue.isEmpty() -> "Select ${title.lowercase()}"
-//                            else -> options.find { it.first == selectedValue }?.second ?: "Default Voice"
-//                        }
-//
-//                        Text(
-//                            text = displayText,
-//                            modifier = Modifier.weight(1f),
-//                            textAlign = androidx.compose.ui.text.style.TextAlign.Start
-//                        )
-//                        Text("▼", color = Gold)
-//                    }
-//
-//                    DropdownMenu(
-//                        expanded = expanded,
-//                        onDismissRequest = { expanded = false },
-//                        modifier = Modifier
-//                            .fillMaxWidth()
-//                            .background(Navy) // Set background to Navy blue
-//                    ) {
-//                        options.forEach { (value, displayName) ->
-//                            DropdownMenuItem(
-//                                onClick = {
-//                                    onSelectionChanged(value)
-//                                    expanded = false
-//                                },
-//                                modifier = Modifier.background(
-//                                    if (value == selectedValue) LightBlue.copy(alpha = 0.3f) else Color.Transparent
-//                                )
-//                            ) {
-//                                Text(
-//                                    text = displayName,
-//                                    color = if (value == selectedValue) Gold else Color.White
-//                                )
-//                            }
-//                        }
-//                    }
-//                }
-//
-//                // Fix: Show selected value only if we have options
-//                if (selectedValue.isNotEmpty() && options.isNotEmpty()) {
-//                    val selectedDisplay = options.find { it.first == selectedValue }?.second
-//                    if (selectedDisplay != null) {
-//                        Text(
-//                            text = "Selected: $selectedDisplay",
-//                            color = Gold,
-//                            style = MaterialTheme.typography.caption,
-//                            modifier = Modifier.padding(top = 4.dp)
-//                        )
-//                    }
-//                }
-//            }
-//        }
-//    }
-
     // Each model in open-webui has an associated chat-id for ease of configuration
     private fun getChatIdForModel(model: String): String {
         return when (model) {
@@ -3117,70 +1882,70 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // New method using MediaStore API
-    private fun findFileUsingMediaStore(filename: String): File? {
-        val TAG = "findFileUsingMediaStore"
-
-        try {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-                LogManager.w(TAG, "No READ_EXTERNAL_STORAGE permission")
-                return null
-            }
-
-            val projection = arrayOf(
-                MediaStore.Files.FileColumns._ID,
-                MediaStore.Files.FileColumns.DISPLAY_NAME,
-                MediaStore.Files.FileColumns.DATA,
-                MediaStore.Files.FileColumns.SIZE
-            )
-
-            // Get filename without extension for pattern matching
-            val nameWithoutExt = if (filename.contains('.')) {
-                filename.substring(0, filename.lastIndexOf('.'))
-            } else {
-                filename
-            }
-
-            // Create selection to find files that match our pattern
-            val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ? OR " +
-                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
-            val selectionArgs = arrayOf(filename, "$nameWithoutExt (%).pdf")
-
-            val cursor: Cursor? = contentResolver.query(
-                MediaStore.Files.getContentUri("external"),
-                projection,
-                selection,
-                selectionArgs,
-                "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC" // Most recent first
-            )
-
-            cursor?.use {
-                val dataColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
-                val nameColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-                val sizeColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
-
-                while (cursor.moveToNext()) {
-                    val filePath = cursor.getString(dataColumnIndex)
-                    val fileName = cursor.getString(nameColumnIndex)
-                    val fileSize = cursor.getLong(sizeColumnIndex)
-
-                    LogManager.d(TAG, "Found potential match: $fileName at $filePath (${fileSize}KB)")
-
-                    val file = File(filePath)
-                    if (file.exists() && file.canRead()) {
-                        LogManager.i(TAG, "Verified file exists and is readable: $filePath")
-                        return file
-                    }
-                }
-            }
-
-        } catch (e: Exception) {
-            LogManager.logCaughtException(TAG, "Error using MediaStore API", e)
-        }
-
-        return null
-    }
+//    // New method using MediaStore API
+//    private fun findFileUsingMediaStore(filename: String): File? {
+//        val TAG = "findFileUsingMediaStore"
+//
+//        try {
+//            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+//                != PackageManager.PERMISSION_GRANTED) {
+//                LogManager.w(TAG, "No READ_EXTERNAL_STORAGE permission")
+//                return null
+//            }
+//
+//            val projection = arrayOf(
+//                MediaStore.Files.FileColumns._ID,
+//                MediaStore.Files.FileColumns.DISPLAY_NAME,
+//                MediaStore.Files.FileColumns.DATA,
+//                MediaStore.Files.FileColumns.SIZE
+//            )
+//
+//            // Get filename without extension for pattern matching
+//            val nameWithoutExt = if (filename.contains('.')) {
+//                filename.substring(0, filename.lastIndexOf('.'))
+//            } else {
+//                filename
+//            }
+//
+//            // Create selection to find files that match our pattern
+//            val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ? OR " +
+//                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
+//            val selectionArgs = arrayOf(filename, "$nameWithoutExt (%).pdf")
+//
+//            val cursor: Cursor? = contentResolver.query(
+//                MediaStore.Files.getContentUri("external"),
+//                projection,
+//                selection,
+//                selectionArgs,
+//                "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC" // Most recent first
+//            )
+//
+//            cursor?.use {
+//                val dataColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+//                val nameColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+//                val sizeColumnIndex = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
+//
+//                while (cursor.moveToNext()) {
+//                    val filePath = cursor.getString(dataColumnIndex)
+//                    val fileName = cursor.getString(nameColumnIndex)
+//                    val fileSize = cursor.getLong(sizeColumnIndex)
+//
+//                    LogManager.d(TAG, "Found potential match: $fileName at $filePath (${fileSize}KB)")
+//
+//                    val file = File(filePath)
+//                    if (file.exists() && file.canRead()) {
+//                        LogManager.i(TAG, "Verified file exists and is readable: $filePath")
+//                        return file
+//                    }
+//                }
+//            }
+//
+//        } catch (e: Exception) {
+//            LogManager.logCaughtException(TAG, "Error using MediaStore API", e)
+//        }
+//
+//        return null
+//    }
 
     // Improved direct access method
     private fun findFileUsingDirectAccess(filename: String): File? {
@@ -3276,74 +2041,6 @@ class MainActivity : ComponentActivity() {
         return null
     }
 
-    // Handle permission request results
-    //override fun onRequestPermissionsResult(
-    //    requestCode: Int,
-    //    permissions: Array<out String>,
-    //    grantResults: IntArray
-    //) {
-    //    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    //
-    //    when (requestCode) {
-    //        STORAGE_PERMISSION_CODE -> {
-    //            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-    //                LogManager.i("Permissions", "Storage permissions granted")
-    //                Toast.makeText(this, "Storage permissions granted", Toast.LENGTH_SHORT).show()
-    //            } else {
-    //                LogManager.w("Permissions", "Storage permissions denied")
-    //                Toast.makeText(this, "Storage permissions needed to find downloaded files", Toast.LENGTH_LONG).show()
-    //            }
-    //        }
-    //    }
-    //}
-
-    // Helper function to find the most recent matching file
-    /*private fun findMostRecentMatchingFile(folder: File, nameWithoutExt: String, extension: String): File? {
-        val TAG = "findMostRecentMatchingFile"
-
-        try {
-            val files = folder.listFiles() ?: return null
-            val matchingFiles = mutableListOf<File>()
-
-            // Collect all matching files (exact name and numbered variants)
-            for (file in files) {
-                if (file.isFile && file.canRead()) {
-                    val fileName = file.name
-
-                    // Check exact match
-                    val exactName = "$nameWithoutExt$extension"
-                    if (fileName.equals(exactName, ignoreCase = true)) {
-                        matchingFiles.add(file)
-                        continue
-                    }
-
-                    // Check numbered variants
-                    val pattern = Regex("^${Regex.escape(nameWithoutExt)}\\s*\\(\\d+\\)${Regex.escape(extension)}$", RegexOption.IGNORE_CASE)
-                    if (pattern.matches(fileName)) {
-                        matchingFiles.add(file)
-                    }
-                }
-            }
-
-            if (matchingFiles.isEmpty()) {
-                LogManager.d(TAG, "No matching files found")
-                return null
-            }
-
-            // Sort by last modified date (most recent first)
-            val mostRecent = matchingFiles.sortedByDescending { it.lastModified() }.first()
-
-            LogManager.i(TAG, "Most recent file: ${mostRecent.name} (${matchingFiles.size} variants found)")
-            LogManager.d(TAG, "File details: ${mostRecent.absolutePath}, size: ${mostRecent.length()} bytes, modified: ${java.util.Date(mostRecent.lastModified())}")
-
-            return mostRecent
-
-        } catch (e: Exception) {
-            LogManager.logCaughtException(TAG, "Error finding most recent matching file", e)
-            return null
-        }
-    }*/
-
     // Helper function to extract filename from URL
     private fun extractFilenameFromUrl(url: String): String? {
         return try {
@@ -3437,233 +2134,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Also update the showFileFoundToast function to show which variant was found
-    /*private fun showFileFoundToast(context: Context, file: File) {
-        val sizeKB = file.length() / 1024
-        val fileName = file.name
-
-        val message = if (fileName.contains("(") && fileName.contains(")")) {
-            "Opening local copy: $fileName (${sizeKB}KB)"
-        } else {
-            "Opening local copy (${sizeKB}KB)"
-        }
-
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        LogManager.i("showFileFoundToast", "Showing toast for file: $fileName")
-    }*/
-
-    /*private fun tryFallbackUrlOpen(context: Context, uri: Uri) {
-        val TAG = "tryFallbackUrlOpen"
-
-        try {
-            LogManager.d(TAG, "Trying fallback approach for URI: $uri")
-
-            val fallbackIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                // Remove MIME type in case it was causing issues
-                type = null
-            }
-
-            context.startActivity(fallbackIntent)
-            LogManager.i(TAG, "Fallback approach succeeded for: $uri")
-
-        } catch (e: Exception) {
-            LogManager.logCaughtException(TAG, "Fallback approach also failed", e)
-
-            // Last resort - try to open in browser explicitly
-            try {
-                val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    setPackage("com.android.browser") // Try default browser
-                }
-                context.startActivity(browserIntent)
-                LogManager.i(TAG, "Browser-specific intent succeeded")
-            } catch (e2: Exception) {
-                LogManager.logCaughtException(TAG, "Even browser-specific intent failed", e2)
-                Toast.makeText(
-                    context,
-                    "No application found to open: $uri",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }*/
-
-    // 5. Improve the getMimeType function:
-    /*private fun getMimeType(url: String): String? {
-        return try {
-            when {
-                url.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
-                url.endsWith(".txt", ignoreCase = true) -> "text/plain"
-                url.endsWith(".doc", ignoreCase = true) -> "application/msword"
-                url.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                url.contains("pdf", ignoreCase = true) -> "application/pdf"
-                else -> null
-            }
-        } catch (e: Exception) {
-            LogManager.logCaughtException("getMimeType", "Error determining MIME type for: $url", e)
-            null
-        }
-    }*/
-
-    // Now, create a RAG Data screen component
-//    @Composable
-//    fun RagDataScreen(
-//        chatState: MutableState<ChatState>,
-//        onClose: () -> Unit
-//    ) {
-//        // Log RagFile details when screen is displayed
-//        LaunchedEffect(Unit) {
-//            LogManager.i(TAG, "RagDataScreen: Displaying ${chatState.value.ragFiles.size} RagFile objects")
-//            chatState.value.ragFiles.forEachIndexed { index, ragFile ->
-//                LogManager.i(TAG, "RagFile[$index]: id='${ragFile.id}', displayName='${ragFile.displayName}', " +
-//                        "url='${ragFile.url}', isSelected=${ragFile.isSelected}")
-//            }
-//        }
-//        Column(
-//            modifier = Modifier
-//                .fillMaxSize()
-//                .background(Navy)
-//                .padding(16.dp)
-//        ) {
-//            // Header
-//            Row(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .padding(bottom = 16.dp),
-//                horizontalArrangement = Arrangement.SpaceBetween,
-//                verticalAlignment = Alignment.CenterVertically
-//            ) {
-//                Text(
-//                    text = "RAG Data Selection",
-//                    color = Gold,
-//                    style = MaterialTheme.typography.h6
-//                )
-//
-//                Button(
-//                    onClick = onClose,
-//                    colors = ButtonDefaults.buttonColors(backgroundColor = LightBlue)
-//                ) {
-//                    Text("Done", color = Color.White)
-//                }
-//            }
-//
-//            Divider(color = LightBlue, thickness = 1.dp)
-//
-//            // Select/Deselect All buttons
-//            Row(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .padding(vertical = 8.dp),
-//                horizontalArrangement = Arrangement.SpaceBetween
-//            ) {
-//                Button(
-//                    onClick = {
-//                        chatState.value = chatState.value.copy(
-//                            ragFiles = chatState.value.ragFiles.map { it.copy(isSelected = true) }
-//                        )
-//                    },
-//                    colors = ButtonDefaults.buttonColors(backgroundColor = Green)
-//                ) {
-//                    Text("Select All", color = Color.White)
-//                }
-//
-//                Button(
-//                    onClick = {
-//                        chatState.value = chatState.value.copy(
-//                            ragFiles = chatState.value.ragFiles.map { it.copy(isSelected = false) }
-//                        )
-//                    },
-//                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-//                ) {
-//                    Text("Deselect All", color = Color.White)
-//                }
-//            }
-//
-//            Divider(color = LightBlue, thickness = 1.dp)
-//
-//            // File list with checkboxes
-//            LazyColumn(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .weight(1f)
-//            ) {
-//                items(chatState.value.ragFiles) { ragFile ->
-//                    Row(
-//                        modifier = Modifier
-//                            .fillMaxWidth()
-//                            .padding(vertical = 8.dp)
-//                            .clickable {
-//                                // Toggle the selection status
-//                                val updatedFiles = chatState.value.ragFiles.map {
-//                                    if (it.id == ragFile.id) {
-//                                        it.copy(isSelected = !it.isSelected)
-//                                    } else {
-//                                        it
-//                                    }
-//                                }
-//                                chatState.value = chatState.value.copy(ragFiles = updatedFiles)
-//                            },
-//                        verticalAlignment = Alignment.CenterVertically
-//                    ) {
-//                        Checkbox(
-//                            checked = ragFile.isSelected,
-//                            onCheckedChange = { isChecked ->
-//                                val updatedFiles = chatState.value.ragFiles.map {
-//                                    if (it.id == ragFile.id) {
-//                                        it.copy(isSelected = isChecked)
-//                                    } else {
-//                                        it
-//                                    }
-//                                }
-//                                chatState.value = chatState.value.copy(ragFiles = updatedFiles)
-//                            },
-//                            colors = CheckboxDefaults.colors(
-//                                checkedColor = Gold,
-//                                uncheckedColor = LightBlue,
-//                                checkmarkColor = Navy
-//                            )
-//                        )
-//
-//                        Column(
-//                            modifier = Modifier
-//                                .weight(1f)
-//                                .padding(start = 8.dp)
-//                        ) {
-//                            Text(
-//                                text = ragFile.displayName,
-//                                color = Gold
-//                            )
-//                            Text(
-//                                text = ragFile.id,
-//                                color = Color.Gray,
-//                                style = MaterialTheme.typography.caption
-//                            )
-//                            // Display URL only if it exists
-//                            if (!ragFile.url.isNullOrEmpty()) {
-//                                Text(
-//                                    text = ragFile.url,
-//                                    color = LightBlue,
-//                                    style = MaterialTheme.typography.caption
-//                                )
-//                            }
-//                        }
-//                    }
-//
-//                    Divider(color = Color.DarkGray, thickness = 0.5.dp)
-//                }
-//            }
-//
-//            // Status text showing selected file count
-//            val selectedCount = chatState.value.ragFiles.count { it.isSelected }
-//            Text(
-//                text = "$selectedCount of ${chatState.value.ragFiles.size} files selected",
-//                color = Gold,
-//                modifier = Modifier.padding(top = 8.dp)
-//            )
-//        }
-//    }
-
     private fun processResponseWithCitations(responseText: String): String {
         // First, check if the response contains citations in [X] format
         if (!responseText.contains("[") || !responseText.contains("]")) {
@@ -3744,18 +2214,6 @@ class MainActivity : ComponentActivity() {
             LogManager.i(TAG, "Updated RagFile URLs based on display names")
         }
     }
-
-    // Update your API request to use the selected model
-    /*private fun createChatCompletionRequest(prompt: String, selectedFiles: List<FileReference>): ChatCompletionRequest {
-        val apiMessage = ApiMessage("user", prompt)
-
-        return ChatCompletionRequest(
-            model = appSettings.value.selectedModel, // Use selected model from settings
-            messages = listOf(apiMessage),
-            chat_id = "d70b00f5-82e1-4070-bcf1-8cce0b9e31ec",
-            files = selectedFiles
-        )
-    }*/
 
     private fun processThinkingContent(content: String): String {
         return if (appSettings.value.showThinking) {
@@ -4131,215 +2589,150 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Improved language loading
-    /*private fun loadAvailableLanguages() {
-        availableLanguages.clear()
-
-        textToSpeech?.let { tts ->
-            try {
-                LogManager.d(TAG, "Loading available languages...")
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    // Use newer API
-                    val locales = tts.availableLanguages
-                    LogManager.d(TAG, "Available locales from TTS: ${locales?.size ?: 0}")
-
-                    locales?.forEach { locale ->
-                        LogManager.d(TAG, "Found locale: ${locale} (${locale.displayName})")
-                        availableLanguages.add(
-                            TtsLanguageInfo(
-                                locale = locale,
-                                displayName = "${locale.displayName} (${locale})",
-                                isAvailable = true
-                            )
-                        )
-                    }
-                } else {
-                    // Use legacy method - test common English locales
-                    val englishLocales = listOf(
-                        Locale.US,
-                        Locale.UK,
-                        Locale.CANADA,
-                        Locale("en", "AU"), // Australia
-                        Locale("en", "IN"), // India
-                        Locale("en", "ZA")  // South Africa
-                    )
-
-                    englishLocales.forEach { locale ->
-                        val result = tts.isLanguageAvailable(locale)
-                        LogManager.d(TAG, "Testing locale $locale: result = $result")
-
-                        if (result >= TextToSpeech.LANG_AVAILABLE) {
-                            availableLanguages.add(
-                                TtsLanguageInfo(
-                                    locale = locale,
-                                    displayName = "${locale.displayName} (${locale})",
-                                    isAvailable = result >= TextToSpeech.LANG_COUNTRY_AVAILABLE
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Sort by display name
-                availableLanguages.sortBy { it.displayName }
-                LogManager.i(TAG, "Loaded ${availableLanguages.size} TTS languages")
-
-                // Log all available languages for debugging
-                availableLanguages.forEach { langInfo ->
-                    LogManager.d(TAG, "Available language: ${langInfo.displayName}")
-                }
-
-            } catch (e: Exception) {
-                LogManager.logCaughtException(TAG, "Error loading TTS languages", e)
-            }
-        }
-    }*/
-
-    // Improved voice loading - filter for English voices
-    private fun loadAvailableVoices() {
-        availableVoices.clear()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            textToSpeech?.let { tts ->
-                try {
-                    LogManager.d(TAG, "Loading available voices...")
-
-                    val allVoices = tts.voices
-                    LogManager.d(TAG, "Total voices available: ${allVoices?.size ?: 0}")
-
-                    allVoices?.forEach { voice ->
-                        LogManager.d(TAG, "Found voice: ${voice.name} - ${voice.locale} - Quality: ${voice.quality}")
-
-                        // Filter for English voices only
-                        if (voice.locale.language == "en") {
-                            val qualityText = when (voice.quality) {
-                                android.speech.tts.Voice.QUALITY_VERY_HIGH -> "Very High"
-                                android.speech.tts.Voice.QUALITY_HIGH -> "High"
-                                android.speech.tts.Voice.QUALITY_NORMAL -> "Normal"
-                                android.speech.tts.Voice.QUALITY_LOW -> "Low"
-                                android.speech.tts.Voice.QUALITY_VERY_LOW -> "Very Low"
-                                else -> "Unknown"
-                            }
-
-                            val networkText = if (voice.isNetworkConnectionRequired) " (Network)" else ""
-
-                            availableVoices.add(
-                                TtsVoiceInfo(
-                                    name = voice.name,
-                                    displayName = "${voice.locale.displayName} - ${voice.name} - $qualityText$networkText",
-                                    locale = voice.locale,
-                                    quality = voice.quality,
-                                    isNetworkConnectionRequired = voice.isNetworkConnectionRequired
-                                )
-                            )
-
-                            LogManager.d(TAG, "Added English voice: ${voice.name} for ${voice.locale}")
-                        }
-                    }
-
-                    // Sort by display name
-                    availableVoices.sortBy { it.displayName }
-                    LogManager.i(TAG, "Loaded ${availableVoices.size} English TTS voices")
-
-                    // If no English voices found, log a warning
-                    if (availableVoices.isEmpty()) {
-                        LogManager.w(TAG, "No English voices found! User may need to install English TTS data.")
-
-                        // Log all available voices for debugging
-                        allVoices?.forEach { voice ->
-                            LogManager.w(TAG, "Available voice (non-English): ${voice.name} - ${voice.locale}")
-                        }
-                    }
-
-                } catch (e: Exception) {
-                    LogManager.logCaughtException(TAG, "Error loading TTS voices", e)
-                }
-            }
-        } else {
-            LogManager.i(TAG, "Voice selection not available on Android < 5.0")
-        }
-    }
-
-    // Add this improved voice loading with better filtering
-    private fun loadAvailableVoicesImproved() {
-        availableVoices.clear()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            textToSpeech?.let { tts ->
-                try {
-                    LogManager.i(TAG, "Loading available voices (improved)...")
-
-                    val allVoices = tts.voices
-                    LogManager.i(TAG, "Total voices available: ${allVoices?.size ?: 0}")
-
-                    if (allVoices == null || allVoices.isEmpty()) {
-                        LogManager.w(TAG, "No voices available from TTS engine")
-                        return
-                    }
-
-                    // Get current language setting to prioritize matching voices
-                    val currentLanguage = parseLocaleString(appSettings.value.ttsLanguage)
-                    LogManager.i(TAG, "Current language setting: $currentLanguage")
-
-                    allVoices.filter { voice ->
-                        // Filter for English voices
-                        voice.locale.language.equals("en", ignoreCase = true)
-                    }.sortedWith(compareBy<android.speech.tts.Voice> { voice ->
-                        // Sort: matching language/country first, then by quality (higher first), then by name
-                        when {
-                            voice.locale == currentLanguage -> 0
-                            voice.locale.language == currentLanguage.language -> 1
-                            else -> 2
-                        }
-                    }.thenBy { -it.quality }.thenBy { it.name }).forEach { voice ->
-
-                        val qualityText = when (voice.quality) {
-                            android.speech.tts.Voice.QUALITY_VERY_HIGH -> "★★★★★"
-                            android.speech.tts.Voice.QUALITY_HIGH -> "★★★★"
-                            android.speech.tts.Voice.QUALITY_NORMAL -> "★★★"
-                            android.speech.tts.Voice.QUALITY_LOW -> "★★"
-                            android.speech.tts.Voice.QUALITY_VERY_LOW -> "★"
-                            else -> "?"
-                        }
-
-                        val networkText = if (voice.isNetworkConnectionRequired) " 🌐" else " 📱"
-                        val matchText = if (voice.locale == currentLanguage) " ✓" else ""
-
-                        // Create a more readable display name
-                        val voiceName = voice.name.split("#").lastOrNull()?.let {
-                            it.replace("_", " ").replace("-", " ")
-                        } ?: voice.name
-
-                        availableVoices.add(
-                            TtsVoiceInfo(
-                                name = voice.name,
-                                displayName = "${voice.locale.displayName}$matchText - $voiceName $qualityText$networkText",
-                                locale = voice.locale,
-                                quality = voice.quality,
-                                isNetworkConnectionRequired = voice.isNetworkConnectionRequired
-                            )
-                        )
-
-                        LogManager.d(TAG, "Added voice: ${voice.name} (${voice.locale}) Quality: ${voice.quality}")
-                    }
-
-                    LogManager.i(TAG, "Loaded ${availableVoices.size} English voices")
-
-                    if (availableVoices.isEmpty()) {
-                        LogManager.w(TAG, "No English voices found!")
-                        // Log all available voices for debugging
-                        allVoices.take(10).forEach { voice ->
-                            LogManager.w(TAG, "Available voice: ${voice.name} (${voice.locale.language}-${voice.locale.country})")
-                        }
-                    }
-
-                } catch (e: Exception) {
-                    LogManager.logCaughtException(TAG, "Error loading voices (improved)", e)
-                }
-            }
-        }
-    }
+//    // Improved voice loading - filter for English voices
+//    private fun loadAvailableVoices() {
+//        availableVoices.clear()
+//
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//            textToSpeech?.let { tts ->
+//                try {
+//                    LogManager.d(TAG, "Loading available voices...")
+//
+//                    val allVoices = tts.voices
+//                    LogManager.d(TAG, "Total voices available: ${allVoices?.size ?: 0}")
+//
+//                    allVoices?.forEach { voice ->
+//                        LogManager.d(TAG, "Found voice: ${voice.name} - ${voice.locale} - Quality: ${voice.quality}")
+//
+//                        // Filter for English voices only
+//                        if (voice.locale.language == "en") {
+//                            val qualityText = when (voice.quality) {
+//                                android.speech.tts.Voice.QUALITY_VERY_HIGH -> "Very High"
+//                                android.speech.tts.Voice.QUALITY_HIGH -> "High"
+//                                android.speech.tts.Voice.QUALITY_NORMAL -> "Normal"
+//                                android.speech.tts.Voice.QUALITY_LOW -> "Low"
+//                                android.speech.tts.Voice.QUALITY_VERY_LOW -> "Very Low"
+//                                else -> "Unknown"
+//                            }
+//
+//                            val networkText = if (voice.isNetworkConnectionRequired) " (Network)" else ""
+//
+//                            availableVoices.add(
+//                                TtsVoiceInfo(
+//                                    name = voice.name,
+//                                    displayName = "${voice.locale.displayName} - ${voice.name} - $qualityText$networkText",
+//                                    locale = voice.locale,
+//                                    quality = voice.quality,
+//                                    isNetworkConnectionRequired = voice.isNetworkConnectionRequired
+//                                )
+//                            )
+//
+//                            LogManager.d(TAG, "Added English voice: ${voice.name} for ${voice.locale}")
+//                        }
+//                    }
+//
+//                    // Sort by display name
+//                    availableVoices.sortBy { it.displayName }
+//                    LogManager.i(TAG, "Loaded ${availableVoices.size} English TTS voices")
+//
+//                    // If no English voices found, log a warning
+//                    if (availableVoices.isEmpty()) {
+//                        LogManager.w(TAG, "No English voices found! User may need to install English TTS data.")
+//
+//                        // Log all available voices for debugging
+//                        allVoices?.forEach { voice ->
+//                            LogManager.w(TAG, "Available voice (non-English): ${voice.name} - ${voice.locale}")
+//                        }
+//                    }
+//
+//                } catch (e: Exception) {
+//                    LogManager.logCaughtException(TAG, "Error loading TTS voices", e)
+//                }
+//            }
+//        } else {
+//            LogManager.i(TAG, "Voice selection not available on Android < 5.0")
+//        }
+//    }
+//
+//    // Add this improved voice loading with better filtering
+//    private fun loadAvailableVoicesImproved() {
+//        availableVoices.clear()
+//
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//            textToSpeech?.let { tts ->
+//                try {
+//                    LogManager.i(TAG, "Loading available voices (improved)...")
+//
+//                    val allVoices = tts.voices
+//                    LogManager.i(TAG, "Total voices available: ${allVoices?.size ?: 0}")
+//
+//                    if (allVoices == null || allVoices.isEmpty()) {
+//                        LogManager.w(TAG, "No voices available from TTS engine")
+//                        return
+//                    }
+//
+//                    // Get current language setting to prioritize matching voices
+//                    val currentLanguage = parseLocaleString(appSettings.value.ttsLanguage)
+//                    LogManager.i(TAG, "Current language setting: $currentLanguage")
+//
+//                    allVoices.filter { voice ->
+//                        // Filter for English voices
+//                        voice.locale.language.equals("en", ignoreCase = true)
+//                    }.sortedWith(compareBy<android.speech.tts.Voice> { voice ->
+//                        // Sort: matching language/country first, then by quality (higher first), then by name
+//                        when {
+//                            voice.locale == currentLanguage -> 0
+//                            voice.locale.language == currentLanguage.language -> 1
+//                            else -> 2
+//                        }
+//                    }.thenBy { -it.quality }.thenBy { it.name }).forEach { voice ->
+//
+//                        val qualityText = when (voice.quality) {
+//                            android.speech.tts.Voice.QUALITY_VERY_HIGH -> "★★★★★"
+//                            android.speech.tts.Voice.QUALITY_HIGH -> "★★★★"
+//                            android.speech.tts.Voice.QUALITY_NORMAL -> "★★★"
+//                            android.speech.tts.Voice.QUALITY_LOW -> "★★"
+//                            android.speech.tts.Voice.QUALITY_VERY_LOW -> "★"
+//                            else -> "?"
+//                        }
+//
+//                        val networkText = if (voice.isNetworkConnectionRequired) " 🌐" else " 📱"
+//                        val matchText = if (voice.locale == currentLanguage) " ✓" else ""
+//
+//                        // Create a more readable display name
+//                        val voiceName = voice.name.split("#").lastOrNull()?.let {
+//                            it.replace("_", " ").replace("-", " ")
+//                        } ?: voice.name
+//
+//                        availableVoices.add(
+//                            TtsVoiceInfo(
+//                                name = voice.name,
+//                                displayName = "${voice.locale.displayName}$matchText - $voiceName $qualityText$networkText",
+//                                locale = voice.locale,
+//                                quality = voice.quality,
+//                                isNetworkConnectionRequired = voice.isNetworkConnectionRequired
+//                            )
+//                        )
+//
+//                        LogManager.d(TAG, "Added voice: ${voice.name} (${voice.locale}) Quality: ${voice.quality}")
+//                    }
+//
+//                    LogManager.i(TAG, "Loaded ${availableVoices.size} English voices")
+//
+//                    if (availableVoices.isEmpty()) {
+//                        LogManager.w(TAG, "No English voices found!")
+//                        // Log all available voices for debugging
+//                        allVoices.take(10).forEach { voice ->
+//                            LogManager.w(TAG, "Available voice: ${voice.name} (${voice.locale.language}-${voice.locale.country})")
+//                        }
+//                    }
+//
+//                } catch (e: Exception) {
+//                    LogManager.logCaughtException(TAG, "Error loading voices (improved)", e)
+//                }
+//            }
+//        }
+//    }
 
     private fun parseLocaleString(localeString: String): Locale {
         val parts = localeString.split("-", "_")
@@ -4359,27 +2752,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Add a function to check and install TTS data if needed
-    private fun checkTtsDataAvailability() {
-        textToSpeech?.let { tts ->
-            // Check if English is available
-            val result = tts.isLanguageAvailable(Locale.US)
-
-            when (result) {
-                TextToSpeech.LANG_MISSING_DATA -> {
-                    LogManager.w(TAG, "TTS data missing - user should install English TTS data")
-                    // You could show a dialog here to prompt user to install TTS data
-                    showTtsDataMissingDialog()
-                }
-                TextToSpeech.LANG_NOT_SUPPORTED -> {
-                    LogManager.w(TAG, "English TTS not supported on this device")
-                }
-                else -> {
-                    LogManager.i(TAG, "English TTS is available")
-                }
-            }
-        }
-    }
+//    // Add a function to check and install TTS data if needed
+//    private fun checkTtsDataAvailability() {
+//        textToSpeech?.let { tts ->
+//            // Check if English is available
+//            val result = tts.isLanguageAvailable(Locale.US)
+//
+//            when (result) {
+//                TextToSpeech.LANG_MISSING_DATA -> {
+//                    LogManager.w(TAG, "TTS data missing - user should install English TTS data")
+//                    // You could show a dialog here to prompt user to install TTS data
+//                    showTtsDataMissingDialog()
+//                }
+//                TextToSpeech.LANG_NOT_SUPPORTED -> {
+//                    LogManager.w(TAG, "English TTS not supported on this device")
+//                }
+//                else -> {
+//                    LogManager.i(TAG, "English TTS is available")
+//                }
+//            }
+//        }
+//    }
 
     private fun showTtsDataMissingDialog() {
         // You can implement this to show a dialog to the user
@@ -4388,83 +2781,83 @@ class MainActivity : ComponentActivity() {
 
     // Also add a function to force reload voices when settings screen is opened:
     // In MainActivity, add this to be called when settings screen opens:
-    private fun refreshTtsData() {
-        coroutineScope.launch {
-            if (isTtsInitialized.value) {
-                LogManager.i(TAG, "Refreshing TTS data for settings")
-                loadAndDebugLanguages()
-                loadAndDebugVoices()
-            }
-        }
-    }
+//    private fun refreshTtsData() {
+//        coroutineScope.launch {
+//            if (isTtsInitialized.value) {
+//                LogManager.i(TAG, "Refreshing TTS data for settings")
+//                loadAndDebugLanguages()
+//                loadAndDebugVoices()
+//            }
+//        }
+//    }
 
-    // Add this function to help debug voice selection
-    private fun debugCurrentTtsSettings() {
-        textToSpeech?.let { tts ->
-            try {
-                LogManager.i(TAG, "=== Current TTS Settings Debug ===")
+//    // Add this function to help debug voice selection
+//    private fun debugCurrentTtsSettings() {
+//        textToSpeech?.let { tts ->
+//            try {
+//                LogManager.i(TAG, "=== Current TTS Settings Debug ===")
+//
+//                // Current language
+//                val currentLanguage = tts.language
+//                LogManager.i(TAG, "Current TTS Language: $currentLanguage")
+//
+//                // Current voice (API 21+)
+//                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//                    val currentVoice = tts.voice
+//                    if (currentVoice != null) {
+//                        LogManager.i(TAG, "Current TTS Voice: ${currentVoice.name}")
+//                        LogManager.i(TAG, "Voice Locale: ${currentVoice.locale}")
+//                        LogManager.i(TAG, "Voice Quality: ${currentVoice.quality}")
+//                    } else {
+//                        LogManager.w(TAG, "Current TTS Voice: null")
+//                    }
+//                }
+//
+//                // Settings from app
+//                val settings = appSettings.value
+//                LogManager.i(TAG, "App Settings - Language: ${settings.ttsLanguage}")
+//                LogManager.i(TAG, "App Settings - Voice: '${settings.ttsVoice}'")
+//                LogManager.i(TAG, "App Settings - Speech Rate: ${settings.ttsSpeechRate}")
+//                LogManager.i(TAG, "App Settings - Pitch: ${settings.ttsPitch}")
+//
+//            } catch (e: Exception) {
+//                LogManager.logCaughtException(TAG, "Error in TTS debug", e)
+//            }
+//        }
+//    }
 
-                // Current language
-                val currentLanguage = tts.language
-                LogManager.i(TAG, "Current TTS Language: $currentLanguage")
-
-                // Current voice (API 21+)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val currentVoice = tts.voice
-                    if (currentVoice != null) {
-                        LogManager.i(TAG, "Current TTS Voice: ${currentVoice.name}")
-                        LogManager.i(TAG, "Voice Locale: ${currentVoice.locale}")
-                        LogManager.i(TAG, "Voice Quality: ${currentVoice.quality}")
-                    } else {
-                        LogManager.w(TAG, "Current TTS Voice: null")
-                    }
-                }
-
-                // Settings from app
-                val settings = appSettings.value
-                LogManager.i(TAG, "App Settings - Language: ${settings.ttsLanguage}")
-                LogManager.i(TAG, "App Settings - Voice: '${settings.ttsVoice}'")
-                LogManager.i(TAG, "App Settings - Speech Rate: ${settings.ttsSpeechRate}")
-                LogManager.i(TAG, "App Settings - Pitch: ${settings.ttsPitch}")
-
-            } catch (e: Exception) {
-                LogManager.logCaughtException(TAG, "Error in TTS debug", e)
-            }
-        }
-    }
-
-    // Fix 1: Make TTS data loading non-blocking
-    private fun refreshTtsDataNonBlocking() {
-        coroutineScope.launch(Dispatchers.IO) { // Use IO dispatcher for heavy work
-            try {
-                LogManager.i(TAG, "Starting non-blocking TTS data refresh...")
-
-                if (!isTtsInitialized.value) {
-                    LogManager.w(TAG, "TTS not initialized, skipping refresh")
-                    return@launch
-                }
-
-                // Load languages in background
-                withContext(Dispatchers.Main) {
-                    loadLanguagesQuickly()
-                }
-
-                // Small delay to let UI update
-                delay(100)
-
-                // Load voices in background
-                withContext(Dispatchers.Main) {
-                    loadVoicesQuickly()
-                }
-
-                LogManager.i(TAG, "TTS data refresh completed")
-
-            } catch (e: Exception) {
-                LogManager.logCaughtException(TAG, "Error in non-blocking TTS refresh", e)
-            }
-        }
-
-    }
+//    // Fix 1: Make TTS data loading non-blocking
+//    private fun refreshTtsDataNonBlocking() {
+//        coroutineScope.launch(Dispatchers.IO) { // Use IO dispatcher for heavy work
+//            try {
+//                LogManager.i(TAG, "Starting non-blocking TTS data refresh...")
+//
+//                if (!isTtsInitialized.value) {
+//                    LogManager.w(TAG, "TTS not initialized, skipping refresh")
+//                    return@launch
+//                }
+//
+//                // Load languages in background
+//                withContext(Dispatchers.Main) {
+//                    loadLanguagesQuickly()
+//                }
+//
+//                // Small delay to let UI update
+//                delay(100)
+//
+//                // Load voices in background
+//                withContext(Dispatchers.Main) {
+//                    loadVoicesQuickly()
+//                }
+//
+//                LogManager.i(TAG, "TTS data refresh completed")
+//
+//            } catch (e: Exception) {
+//                LogManager.logCaughtException(TAG, "Error in non-blocking TTS refresh", e)
+//            }
+//        }
+//
+//    }
 
     // Fix 2: Quick language loading without heavy processing
     private fun loadLanguagesQuickly() {
